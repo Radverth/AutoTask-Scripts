@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "",
+    "FUNCTIONS_WORKER_RUNTIME": "powershell",
+    "AutotaskUdfLabel": "<YOUR_UDF_LABEL>",
+    "AbillitySystemInformation": "<YOUR_SYSTEM_INFORMATION>",
+    "AbillityUserName": "<YOUR_ABILLITY_USERNAME>",
+    "AbillityPassword": "<YOUR_ABILLITY_PASSWORD>"
+  }
+}
