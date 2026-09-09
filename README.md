@@ -332,21 +332,61 @@ Body → **raw** → **JSON**:
 
 #### Utilities
 
-Same four headers.
+Maintenance calls — same four headers. Not part of the 0→7 run.
 
-**List webhooks** — GET
+##### List webhooks
+
+**GET**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
 ```
 
-**Delete webhook {{webhookId}}** — DELETE
+→ Every Company webhook on the account, with its id, name and active state. Use it to find the id of the one you want to change.
+
+##### Get webhook {{webhookId}}
+
+**GET**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}
 ```
 
-*List* shows every Company webhook on the account. *Delete* removes whichever id is in `webhookId` — set it by hand to remove a different one. Between them you can undo a duplicate and start over.
+→ Current settings of one webhook. Run it before and after an update to confirm the change landed. It warns in the console if the webhook is inactive.
+
+##### Update webhook URLs
+
+**PATCH**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks
+```
+
+Body → **raw** → **JSON**:
+
+```json
+{
+  "id": "{{webhookId}}",
+  "WebhookUrl": "{{webhookUrl}}",
+  "DeactivationUrl": "{{deactivationUrl}}"
+}
+```
+
+→ Changes the two URLs **without** deleting and recreating the webhook, so the trigger field and UDF registrations from requests 4, 6 and 7 survive.
+
+Set the `webhookUrl` and `deactivationUrl` variables to the new values first, and check `webhookId` points at the webhook you mean.
+
+If Autotask has deactivated the webhook (it switches off webhooks whose endpoint keeps failing), add `"IsActive": true` to the body to turn it back on in the same call.
+
+##### Delete webhook {{webhookId}}
+
+**DELETE**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}
+```
+
+→ Removes whichever id is in `webhookId`. Set it by hand to delete a different one. This throws away the field registrations too — prefer *Update webhook URLs* if you only need to change an address.
 
 Then skip to step 6 to test it.
 

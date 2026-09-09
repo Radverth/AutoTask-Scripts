@@ -471,6 +471,120 @@
           ]
         },
         {
+          "name": "Get webhook {{webhookId}}",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}"
+            },
+            "description": "Shows the webhook's current settings. Run it before and after an update to confirm the change landed."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const w = j.item || (j.items && j.items[0]) || j;",
+                  "",
+                  "console.log('--- webhook ' + w.id + ' ---');",
+                  "console.log('name           : ' + w.name);",
+                  "console.log('isActive       : ' + w.isActive);",
+                  "console.log('webhookUrl     : ' + w.webhookUrl);",
+                  "console.log('deactivationUrl: ' + w.deactivationUrl);",
+                  "",
+                  "pm.test('Webhook found', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    pm.expect(w, 'no webhook in response').to.be.ok;",
+                  "});",
+                  "",
+                  "if (w.isActive === false) {",
+                  "    console.log('NOTE: this webhook is INACTIVE. Autotask deactivates webhooks whose');",
+                  "    console.log('endpoint keeps failing. Add \"IsActive\": true to the update body to');",
+                  "    console.log('switch it back on once the URL is correct.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update webhook URLs",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks"
+            },
+            "description": "Changes an existing webhook's two URLs without deleting and recreating it, so the trigger field and UDF registrations from requests 4, 6 and 7 are kept.\n\nSet the webhookUrl and deactivationUrl collection variables to the new values first, and make sure webhookId is the webhook you mean to change - 'List webhooks' shows them all.\n\nIf the webhook has been deactivated (Autotask switches off webhooks whose endpoint keeps failing), add \"IsActive\": true to the body to turn it back on.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{webhookId}}\",\n  \"WebhookUrl\": \"{{webhookUrl}}\",\n  \"DeactivationUrl\": \"{{deactivationUrl}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Webhook updated', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('Updated webhook ' + pm.collectionVariables.get('webhookId'));",
+                  "    console.log('  webhookUrl      -> ' + pm.collectionVariables.get('webhookUrl'));",
+                  "    console.log('  deactivationUrl -> ' + pm.collectionVariables.get('deactivationUrl'));",
+                  "    console.log('Run \"Get webhook\" to confirm.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Delete webhook {{webhookId}}",
           "request": {
             "method": "DELETE",
