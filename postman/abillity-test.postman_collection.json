@@ -1,12 +1,12 @@
 {
   "info": {
     "name": "aBILLity API test",
-    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nChecked against api.abillity.co.uk/GettingStarted: GET returns a CompanyView with Name at\nthe top level, PATCH updates selected details, PUT would replace ALL details, and the id is\nan integer. Name is limited to 50 characters.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  1 reads the company and stores its current name. Safe, changes nothing.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
+    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nChecked against api.abillity.co.uk/GettingStarted: GET returns a CompanyView with Name at\nthe top level, PATCH updates selected details, PUT would replace ALL details, and the id is\nan integer. Name is limited to 50 characters.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  1 reads the company - name, LastUpdated, flags and dates - and stores the name.\n    Read-only. Run this alone whenever you just want to check what aBILLity holds.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
     {
-      "name": "1. Get company (read-only)",
+      "name": "1. Get company \u2014 check its name (read-only)",
       "request": {
         "method": "GET",
         "header": [
@@ -34,7 +34,7 @@
         "url": {
           "raw": "https://api.abillity.co.uk/api/company/{{companyId}}"
         },
-        "description": "Looks the company up and stores its current name in {{originalName}}, so request 3 can put it back.\n\nChanges nothing. Always run this first.\n\n404 means no company with that id - which is exactly what the Worker would hit if the 'aBillity Company ID' UDF is wrong."
+        "description": "GET api/company/{id} - the details of one company. Read-only, changes nothing, so run it as often as you like.\n\nUse it on its own to check what aBILLity currently holds for a company, or before requests 2 and 3 so the original name is captured.\n\nLastUpdated is the useful one when testing the sync: after renaming the company in Autotask, this should show a timestamp of a moment ago. If the name changed but LastUpdated is old, you are looking at the wrong company.\n\n401 = bad credentials OR no company permissions (aBILLity uses 401 for both).\n404 = no such company, or no companies in this database."
       },
       "event": [
         {
@@ -51,22 +51,43 @@
               "if (code === 405) { console.log('      nothing will capture the original name, so restoring is manual.'); }",
               "",
               "let name = null;",
+              "",
               "if (code === 200) {",
               "    let body = {};",
               "    try { body = pm.response.json(); } catch (e) { body = {}; }",
-              "    // CompanyView returns Name at the top level.",
+              "",
+              "    // CompanyView returns everything at the top level.",
+              "    console.log('--- aBILLity company ' + body.Id + ' ---');",
+              "    console.log('Name        : ' + JSON.stringify(body.Name));",
+              "    console.log('LastUpdated : ' + body.LastUpdated);",
+              "",
+              "    const flags = ['IsCustomer','IsAgent','IsCarrier','IsReseller','IsSupplier',",
+              "                   'IsOperator','IsProspect','IsConsumer'];",
+              "    const on = flags.filter(f => body[f] === true);",
+              "    console.log('Flags set   : ' + (on.join(', ') || '(none)'));",
+              "",
+              "    const dates = ['DateSigned','DateReceived','DateLive','LastContacted'];",
+              "    dates.forEach(d => { if (body[d]) { console.log(d.padEnd(12) + ': ' + body[d]); } });",
+              "",
+              "    if ((body.CustomProperties || []).length) {",
+              "        console.log('Custom properties: ' + body.CustomProperties.length);",
+              "    }",
+              "",
               "    if (body.Name) { name = body.Name; }",
+              "",
+              "    console.log('');",
+              "    console.log('Testing a sync? LastUpdated should be a moment ago if the rename just landed.');",
               "}",
               "",
               "if (name) {",
               "    pm.collectionVariables.set('originalName', name);",
-              "    console.log('Current name: ' + JSON.stringify(name));",
-              "    console.log('Stored in {{originalName}} - request 3 restores it.');",
+              "    console.log('Name stored in {{originalName}} - request 3 restores it.');",
               "} else if (code === 200) {",
-              "    console.log('Read OK but no Name field found. Check the body; restoring will be manual.');",
+              "    console.log('Read OK but no Name field found. Check the raw body below.');",
               "}",
               "",
-              "pm.test('Company found', function () { pm.response.to.have.status(200); });"
+              "pm.test('Company found', function () { pm.response.to.have.status(200); });",
+              "pm.test('Has a name', function () { pm.expect(name, 'no Name in the response').to.be.ok; });"
             ]
           }
         }

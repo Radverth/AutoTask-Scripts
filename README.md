@@ -547,11 +547,13 @@ Import [`postman/abillity-test.postman_collection.json`](postman/abillity-test.p
 
 | # | Request | Does |
 |---|---|---|
-| 1 | Get company | **Read-only.** Shows the current name and stores it in `originalName`. |
+| 1 | Get company — check its name | **Read-only.** Prints `Name`, `LastUpdated`, the flags and dates from `CompanyView`, and stores the name in `originalName`. Run it alone any time you just want to see what aBILLity holds. |
 | 2 | Rename company | **Writes.** The exact PATCH the Worker makes. |
 | 3 | Restore original name | Puts back what request 1 captured. |
 
-Run 1 first — it's what makes 3 possible. To check credentials only, run 1 and stop.
+Run 1 first — it's what makes 3 possible. To just check a company's name, or only the credentials, run 1 and stop.
+
+`LastUpdated` is the field to watch when testing a sync: rename the company in Autotask, run request 1, and it should read a moment ago. A name that changed with an old `LastUpdated` means you're looking at a different company than the one that synced.
 
 ### PowerShell
 
