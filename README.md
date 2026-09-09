@@ -143,23 +143,210 @@ You can do this with PowerShell **or** Postman — they make the same API calls.
 
 ### Option A — Postman
 
-Import [`postman/autotask-abillity-sync.postman_collection.json`](postman/autotask-abillity-sync.postman_collection.json) (**Import → File**).
+Either import the collection, or build the requests by hand from the values below — they're identical.
 
-1. Open the collection's **Variables** tab and fill in `userName`, `apiIntegrationCode`, `secret`, `webhookUrl`, `deactivationUrl`, `notificationEmail`, and your two UDF labels. Leave `baseUrl` and everything ending in `Id` blank — the requests fill those in as they run. Remember to hit **Save**.
-2. Open the console first: **View → Show Postman Console**. The scripts log what they captured, and it's where request 5 lists your real UDF labels if they don't match.
-3. Run requests **0 → 7 in order**, top to bottom. Each stores what the next one needs.
+**To import:** [`postman/autotask-abillity-sync.postman_collection.json`](postman/autotask-abillity-sync.postman_collection.json) → **Import → File**. Everything below is then already set up, and the requests chain the ids automatically.
 
-| # | Request | What it does |
-|---|---|---|
-| 0 | Get zone information | Finds your server, sets `baseUrl`. **Sends no credentials** — always safe to run. |
-| 1 | Test credentials | One authenticated call. 200 good, 401 rejected *or locked*, 403 valid but no permission. |
-| 2 | Create the webhook | Sets `webhookId`. **Run once** — running again makes a duplicate. |
-| 3 | Find CompanyName fieldID | Sets `companyNameFieldId`. |
-| 4 | Register the trigger field | Makes a name change fire the webhook. |
-| 5 | Find both UDF field IDs | Sets both. Lists all your UDF labels in the console if either doesn't match. |
-| 6, 7 | Register each UDF | Adds them to the payload as ride-along fields. |
+Either way, open **View → Show Postman Console** first. The scripts log what they captured, and request 5 prints your real UDF labels if yours don't match.
 
-Under **Utilities** there's *List webhooks* (see what exists) and *Delete webhook* (undo a duplicate, or start over).
+#### The variables
+
+Collection → **Variables** tab. Fill in the top group; leave the bottom group blank — requests 0–5 fill those in as they run (or you paste them yourself if you're building by hand). Hit **Save**.
+
+| Variable | Value to paste |
+|---|---|
+| `userName` | your Autotask **API user's** username (usually an email address — not your own login) |
+| `apiIntegrationCode` | the Tracking Identifier from Admin → Extensions & Integrations → Integration Vendor API user |
+| `secret` | the API user's generated Password/Secret |
+| `webhookUrl` | `https://autotask-abillity-sync.<your-subdomain>.workers.dev/api/CompanyNameSync?code=<YOUR_WEBHOOK_TOKEN>` |
+| `deactivationUrl` | `https://autotask-abillity-sync.<your-subdomain>.workers.dev/api/CompanyNameSyncDeactivated?code=<YOUR_WEBHOOK_TOKEN>` |
+| `notificationEmail` | where Autotask should email if the webhook starts failing |
+| `abillityIdUdfLabel` | `aBillity Company ID` |
+| `syncFlagUdfLabel` | `Sync with aBillity (yes or no)` |
+
+Filled in by the requests — leave blank to start:
+
+| Variable | Set by |
+|---|---|
+| `baseUrl` | request 0 |
+| `webhookId` | request 2 |
+| `companyNameFieldId` | request 3 |
+| `abillityIdUdfFieldId` | request 5 |
+| `syncFlagUdfFieldId` | request 5 |
+
+#### The headers
+
+**Every request except request 0** takes these four. Request 0 needs none.
+
+```
+ApiIntegrationcode: {{apiIntegrationCode}}
+UserName: {{userName}}
+Secret: {{secret}}
+Content-Type: application/json
+```
+
+In Postman's Headers tab that's four rows — key on the left, value on the right:
+
+| Key | Value |
+|---|---|
+| `ApiIntegrationcode` | `{{apiIntegrationCode}}` |
+| `UserName` | `{{userName}}` |
+| `Secret` | `{{secret}}` |
+| `Content-Type` | `application/json` |
+
+#### The requests
+
+Run **0 → 7 in order**. Request 0 sends no credentials and is always safe. Request 2 creates real state — **run it once**.
+
+##### 0. Get zone information (no credentials sent)
+
+*No headers, no credentials — safe to run at will.*
+
+**GET**
+
+```
+https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}
+```
+
+→ Copy `url` from the response into the **`baseUrl`** variable. It ends in `/ATServicesRest` — keep that.
+
+##### 1. Test credentials
+
+**GET**
+
+```
+{{baseUrl}}/V1.0/Companies/entityInformation
+```
+
+→ Nothing to capture. `200` = good, `401` = rejected **or account locked**, `403` = valid but no permission.
+
+##### 2. Create the webhook
+
+**POST**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks
+```
+
+Body → **raw** → **JSON**:
+
+```json
+{
+  "IsActive": true,
+  "DeactivationUrl": "{{deactivationUrl}}",
+  "IsSubscribedToUpdateEvents": true,
+  "Name": "Company Name -> aBILLity Sync",
+  "SecretKey": "{{$guid}}",
+  "SendThresholdExceededNotification": true,
+  "WebhookUrl": "{{webhookUrl}}",
+  "NotificationEmailAddress": "{{notificationEmail}}"
+}
+```
+
+`{{$guid}}` is a Postman built-in — it generates a random SecretKey for you, so leave it exactly as written.
+
+→ Copy `itemId` from the response into the **`webhookId`** variable.
+
+##### 3. Find the CompanyName fieldID
+
+**GET**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhookFields/entityInformation/fields
+```
+
+→ In the response find the field named `fieldID`, then inside its `picklistValues` find the entry labelled `CompanyName`. Copy its `value` into **`companyNameFieldId`**.
+
+##### 4. Register CompanyName as the trigger field
+
+**POST**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields
+```
+
+Body → **raw** → **JSON**:
+
+```json
+{
+  "FieldID": "{{companyNameFieldId}}",
+  "IsSubscribedField": true,
+  "IsDisplayAlwaysField": true,
+  "WebhookID": "{{webhookId}}"
+}
+```
+
+→ Nothing to capture.
+
+##### 5. Find both UDF field IDs
+
+**GET**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhookUdfFields/entityInformation/fields
+```
+
+→ Find the field named `udfFieldID`, then in its `picklistValues` find your two labels. Copy their `value`s into **`abillityIdUdfFieldId`** and **`syncFlagUdfFieldId`**. If a label isn't there, the list shows every Company UDF you actually have — use the exact spelling from it.
+
+##### 6. Register UDF: {{abillityIdUdfLabel}}
+
+**POST**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields
+```
+
+Body → **raw** → **JSON**:
+
+```json
+{
+  "UdfFieldID": "{{abillityIdUdfFieldId}}",
+  "IsSubscribedField": false,
+  "IsDisplayAlwaysField": true,
+  "WebhookID": "{{webhookId}}"
+}
+```
+
+→ Nothing to capture.
+
+##### 7. Register UDF: {{syncFlagUdfLabel}}
+
+**POST**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields
+```
+
+Body → **raw** → **JSON**:
+
+```json
+{
+  "UdfFieldID": "{{syncFlagUdfFieldId}}",
+  "IsSubscribedField": false,
+  "IsDisplayAlwaysField": true,
+  "WebhookID": "{{webhookId}}"
+}
+```
+
+→ Nothing to capture.
+
+#### Utilities
+
+Same four headers.
+
+**List webhooks** — GET
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
+```
+
+**Delete webhook {{webhookId}}** — DELETE
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}
+```
+
+*List* shows every Company webhook on the account. *Delete* removes whichever id is in `webhookId` — set it by hand to remove a different one. Between them you can undo a duplicate and start over.
 
 Then skip to step 5.
 
