@@ -149,8 +149,13 @@ try {
 Write-Host ""
 Write-Host "  HTTP status : $StatusCode"
 Write-Host "  Content-Type: $ContentType"
-Write-Host "  Body (first 500 chars):"
-Write-Host "    $((''+$Body).Substring(0, [Math]::Min(500, (''+$Body).Length)))"
+if ([string]::IsNullOrWhiteSpace($Body)) {
+    Write-Host "  Body        : (empty - this is normal for a 401, and is why a plain"
+    Write-Host "                 curl looks 'blank'. The status above is what matters.)"
+} else {
+    Write-Host "  Body (first 500 chars):"
+    Write-Host "    $((''+$Body).Substring(0, [Math]::Min(500, (''+$Body).Length)))"
+}
 Write-Host ""
 
 if ($ContentType -like "*html*") {
