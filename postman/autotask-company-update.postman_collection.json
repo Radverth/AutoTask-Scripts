@@ -1,0 +1,300 @@
+{
+  "info": {
+    "name": "Autotask - update a company name",
+    "description": "Reads and renames an Autotask company through the API. Standalone - nothing here depends on the sync, the Worker, or aBILLity.\n\nSETUP\n  Variables tab: userName, apiIntegrationCode, secret, companySearch, newCompanyName.\n  Leave baseUrl, companyId and originalCompanyName blank - the requests fill them in.\n\nORDER\n  0 finds your zone. No credentials sent, safe to run at will.\n  1 finds a company by name and gives you its id.\n  2 reads it, shows its user-defined fields, and stores its current name.\n  3 renames it. THIS CHANGES LIVE AUTOTASK DATA.\n  4 puts the original name back.\n\nOpen View > Show Postman Console - the requests log what they found and captured.\n\nAutotask's PATCH takes the id in the BODY, not the URL.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Get zone information (no credentials sent)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}"
+        },
+        "description": "Finds which Autotask server your account lives on and stores it as {{baseUrl}}.\n\nSends NO credentials - safe to run at will."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "pm.test('Zone lookup returned a url', function () {",
+              "    pm.expect(json.url, 'no url in response').to.be.a('string');",
+              "});",
+              "if (json.url) {",
+              "    const base = json.url.replace(/\\/+$/, '');",
+              "    pm.collectionVariables.set('baseUrl', base);",
+              "    console.log('baseUrl set to: ' + base);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Find a company by name",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/Companies/query?search={\"filter\":[{\"op\":\"contains\",\"field\":\"companyName\",\"value\":\"{{companySearch}}\"}]}"
+        },
+        "description": "Lists companies whose name contains {{companySearch}}, with their ids.\n\nRead-only. Copy the id you want into {{companyId}} (or if there is exactly one match it is set for you)."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const items = (pm.response.json().items) || [];",
+              "console.log(items.length + ' match(es):');",
+              "items.slice(0, 25).forEach(c => console.log('  id ' + c.id + '  ' + c.companyName));",
+              "if (items.length === 1) {",
+              "    pm.collectionVariables.set('companyId', items[0].id);",
+              "    console.log('One match - companyId set to ' + items[0].id);",
+              "}",
+              "pm.test('Search returned something', function () { pm.expect(items.length).to.be.above(0); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Get company {{companyId}} (read-only)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/Companies/{{companyId}}"
+        },
+        "description": "Shows the company's current name and every user-defined field on it.\n\nRead-only. Stores the current name in {{originalCompanyName}} so request 4 can put it back."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const j = pm.response.json();",
+              "const c = j.item || (j.items && j.items[0]) || j;",
+              "",
+              "console.log('--- company ' + c.id + ' ---');",
+              "console.log('name: ' + c.companyName);",
+              "",
+              "const udfs = c.userDefinedFields || [];",
+              "if (udfs.length) {",
+              "    console.log('user-defined fields:');",
+              "    udfs.forEach(u => console.log('  ' + JSON.stringify(u.name) + ' = ' + JSON.stringify(u.value)));",
+              "} else {",
+              "    console.log('no user-defined fields returned');",
+              "}",
+              "",
+              "if (c.companyName) {",
+              "    pm.collectionVariables.set('originalCompanyName', c.companyName);",
+              "    console.log('Original name stored - request 4 restores it.');",
+              "}",
+              "",
+              "pm.test('Company found', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Update the company name",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/Companies"
+        },
+        "description": "Renames the company.\n\n*** THIS CHANGES LIVE AUTOTASK DATA. ***\n\nRun request 2 first so the original name is captured, then request 4 to put it back.\n\nNote the id goes in the BODY, not the URL - that is Autotask's PATCH convention.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"{{companyId}}\",\n  \"companyName\": \"{{newCompanyName}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Rename accepted', function () { pm.response.to.have.status(200); });",
+              "if (pm.response.code === 200) {",
+              "    console.log('Renamed to ' + JSON.stringify(pm.collectionVariables.get('newCompanyName')));",
+              "    console.log('Run request 4 to restore ' + JSON.stringify(pm.collectionVariables.get('originalCompanyName')));",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Restore the original name",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/Companies"
+        },
+        "description": "Puts the name back to whatever request 2 captured.\n\nIf {{originalCompanyName}} is empty, request 2 did not capture it - set the name by hand instead of running this.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"id\": \"{{companyId}}\",\n  \"companyName\": \"{{originalCompanyName}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const original = pm.collectionVariables.get('originalCompanyName');",
+              "if (!original) {",
+              "    console.log('WARNING: {{originalCompanyName}} is empty - this just sent a blank name.');",
+              "    console.log('Fix the company name by hand in Autotask.');",
+              "}",
+              "if (pm.response.code === 200) {",
+              "    console.log('Restored to ' + JSON.stringify(original));",
+              "} else {",
+              "    console.log('RESTORE FAILED (' + pm.response.code + '). The company is still renamed.');",
+              "}",
+              "pm.test('Restored', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "userName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "apiIntegrationCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "companySearch",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "newCompanyName",
+      "value": "Rename Test - safe to change back",
+      "type": "string"
+    },
+    {
+      "key": "baseUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "companyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "originalCompanyName",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

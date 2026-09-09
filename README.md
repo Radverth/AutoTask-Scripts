@@ -24,6 +24,7 @@ So a name change syncs only when the flag says yes **and** an aBILLity ID is pre
 - **`autotask-abillity-sync.ps1`** — run this once, at the end, to register the webhook with Autotask. Host-agnostic: it just needs your two endpoint URLs.
 - **`test-autotask-credentials.ps1`** — checks your Autotask zone and credentials without running the full setup, and without spending failed login attempts you didn't mean to spend.
 - **`postman/autotask-abillity-sync.postman_collection.json`** — the same webhook setup as an importable Postman collection, if you'd rather click than run PowerShell.
+- **`postman/autotask-company-update.postman_collection.json`** — standalone: read and rename an Autotask company through the API. Renaming one is what fires the sync, so this is how you test end to end without clicking through the Autotask UI.
 - **`test-abillity.ps1`** and **`postman/abillity-test.postman_collection.json`** — test the aBILLity side on its own: credentials, company id, and the rename the Worker performs.
 - **`cloudflare-worker/`** — the Cloudflare Worker (JavaScript):
   - `src/index.js` — one Worker serving both endpoints. This is the file you paste into the dashboard.
@@ -331,21 +332,6 @@ Body → **raw** → **JSON**:
 
 → Nothing to capture.
 
-#### Testing the sync end to end
-
-A folder of requests that renames a company in Autotask to fire the webhook, so you can test without clicking through the Autotask UI.
-
-> **T3 and T4 write to live data in two systems.** The rename lands in Autotask and, if the sync works, in aBILLity too. Use a company you're willing to rename, and let T4 put it back.
-
-| # | Request | Does |
-|---|---|---|
-| T1 | Find a company by name | Searches on `testCompanySearch`, lists matches with ids. Read-only. |
-| T2 | Check the company is set up | **Read-only, and the one to run first.** Prints both UDF values and fails its tests if the sync flag isn't yes or the aBILLity id is blank. Captures the current name. |
-| T3 | Rename the company | Fires the sync. Start the Worker log stream before running it. |
-| T4 | Restore the original name | Fires the sync again, restoring both names. |
-
-T2 earns its place: a company that isn't flagged is skipped *by design*, and without checking first that looks identical to a broken sync.
-
 #### Utilities
 
 Maintenance calls — same four headers. Not part of the 0→7 run.
@@ -479,7 +465,7 @@ That last row is now meaningful: every request logs its arrival before anything 
 
 1. Pick a test company in Autotask. Set `Sync with aBillity (yes or no)` to **Yes** and put a real aBILLity ID in `aBillity Company ID`.
 2. Start the log stream (above) **before** you make the change — a live tail won't show you anything retrospectively.
-3. Change that company's name in Autotask.
+3. Change that company's name — in the Autotask UI, or by importing [`postman/autotask-company-update.postman_collection.json`](postman/autotask-company-update.postman_collection.json) and running requests 0 → 4. That collection finds a company, shows its UDF values, renames it, and puts the name back.
 4. Within a minute or so you should see `Synced company <id> -> '<new name>'`.
 5. Check the company in aBILLity — the name should match.
 
