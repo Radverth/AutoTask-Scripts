@@ -22,6 +22,7 @@ So a name change syncs only when the flag says yes **and** an aBILLity ID is pre
 ## What's in this repo
 
 - **`autotask-abillity-sync.ps1`** — run this once, at the end, to register the webhook with Autotask. Host-agnostic: it just needs your two endpoint URLs.
+- **`test-autotask-credentials.ps1`** — checks your Autotask zone and credentials without running the full setup, and without spending failed login attempts you didn't mean to spend.
 - **`cloudflare-worker/`** — the Cloudflare Worker (JavaScript):
   - `src/index.js` — one Worker serving both endpoints. This is the file you paste into the dashboard.
   - `wrangler.toml` — config, if you deploy from the command line instead.
@@ -238,6 +239,28 @@ This is Autotask saying "that URL doesn't exist here" before the script has done
 The script tries several host and version combinations and prints each URL as it goes, so the last few lines tell you exactly what was attempted.
 
 **One error used to become six.** Earlier versions carried on after a failure, so an empty base URL produced a cascade of `Invalid URI: The hostname could not be parsed` messages and a misleading `No Company UDF found...` at the end. The script now stops at the first real problem — if you see UDF errors now, they're genuine.
+
+**Test credentials safely with `test-autotask-credentials.ps1`**
+
+Don't debug credentials by re-running the setup script — every failed attempt counts toward locking the account. Use the tester instead.
+
+The zone lookup sends no credentials at all, so this can never lock anything:
+
+```powershell
+.\test-autotask-credentials.ps1 -UserName "api-user@yourdomain.com" -ZoneOnly
+```
+
+It prints the zone URL your account lives on. Note it already ends in `/ATServicesRest` — a very common mistake is dropping that, which gives you a **blank HTML page** instead of JSON. HTML always means the request never reached the API, so the URL is wrong, not the credentials.
+
+Once you're confident, test the credentials with exactly one authenticated request (it asks before sending):
+
+```powershell
+.\test-autotask-credentials.ps1 -UserName "api-user@yourdomain.com" -ApiIntegrationCode "..." -Secret "..."
+```
+
+It prints the HTTP status, content type and response body, and tells you what each status means.
+
+**If the account is locked**, none of this will work until an Autotask admin unlocks it, and further attempts may extend the lockout. Unlock first, test once, then run the setup script.
 
 **`Autotask rejected the credentials`**
 
