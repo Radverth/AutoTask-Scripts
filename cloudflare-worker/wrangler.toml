@@ -1,0 +1,8 @@
+name = "autotask-abillity-sync"
+main = "src/index.js"
+compatibility_date = "2026-09-09"
+
+# Not a secret - the exact label of your Autotask Company UDF that holds the
+# aBILLity Company ID. Everything else is set with `wrangler secret put`.
+[vars]
+AutotaskUdfLabel = "<YOUR_UDF_LABEL>"
