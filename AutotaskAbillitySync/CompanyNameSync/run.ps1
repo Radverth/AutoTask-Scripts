@@ -2,7 +2,12 @@ using namespace System.Net
 
 param($Request, $TriggerMetadata)
 
-$UdfLabel = $env:AutotaskUdfLabel
+$AbillityIdUdfLabel = $env:AutotaskAbillityIdUdfLabel
+$SyncFlagUdfLabel   = $env:AutotaskSyncFlagUdfLabel
+
+# What the sync-flag UDF can say for "yes". Anything else - including blank -
+# means don't sync, so a company is never synced by accident.
+$AffirmativeValues = @("yes", "y", "true", "1", "on", "checked")
 
 $Payload      = $Request.Body
 $StatusCode   = [HttpStatusCode]::OK
@@ -14,9 +19,18 @@ if ($Payload.EntityType -eq "Company" -and $Payload.Action -eq "Update") {
     foreach ($f in $Payload.Fields) { $FieldsMap[$f.name] = $f.value }
 
     $NewName    = $FieldsMap["CompanyName"]
-    $AbillityId = $FieldsMap[$UdfLabel]
+    $SyncFlag   = $FieldsMap[$SyncFlagUdfLabel]
+    $AbillityId = $FieldsMap[$AbillityIdUdfLabel]
 
-    if ($NewName -and $AbillityId) {
+    $ShouldSync = $AffirmativeValues -contains ("$SyncFlag").Trim().ToLower()
+
+    if (-not $NewName) {
+        # This update didn't touch the name.
+    } elseif (-not $ShouldSync) {
+        Write-Host "Autotask company $($Payload.Id) is not flagged for aBILLity sync ('$SyncFlagUdfLabel' = '$SyncFlag') - skipping"
+    } elseif (-not $AbillityId) {
+        Write-Warning "Autotask company $($Payload.Id) is flagged for sync but has no '$AbillityIdUdfLabel' - skipping"
+    } else {
 
         if ($NewName.Length -gt 50) { $NewName = $NewName.Substring(0, 50) }
 
@@ -39,9 +53,6 @@ if ($Payload.EntityType -eq "Company" -and $Payload.Action -eq "Update") {
             $StatusCode   = [HttpStatusCode]::InternalServerError
             $ResponseBody = "sync failed"
         }
-
-    } elseif (-not $AbillityId) {
-        Write-Warning "Autotask company $($Payload.Id) has no linked aBILLity ID — skipping"
     }
 }
 

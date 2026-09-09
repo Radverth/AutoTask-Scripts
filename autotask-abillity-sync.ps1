@@ -22,8 +22,14 @@ $WebhookUrl         = "https://yourhost.example.com/webhooks/autotask-company"
 $DeactivationUrl    = "https://yourhost.example.com/webhooks/autotask-company/deactivated"
 $NotificationEmail  = "you@yourdomain.com"
 
-# --- The exact label of your Company UDF that stores the aBILLity Company ID ---
-$UdfLabel = "<YOUR_UDF_LABEL>"
+# --- The exact labels of your two Company UDFs ---
+# These must match Autotask character for character, capitals included.
+$AbillityIdUdfLabel = "aBillity Company ID"
+$SyncFlagUdfLabel   = "Sync with aBillity (yes or no)"
+
+# What the sync-flag UDF can say for "yes". Anything else - including blank -
+# means don't sync, so a company is never synced by accident.
+$AffirmativeValues = @("yes", "y", "true", "1", "on", "checked")
 
 ### ---------------------------------------------------------------------
 ### 1. Resolve your Autotask zone / base URL (only needs doing once)
@@ -93,33 +99,45 @@ Invoke-RestMethod -Uri "$AutotaskBaseUri/v1.0/CompanyWebhooks/$WebhookId/Fields"
     -Method Post -Headers $AutotaskAuthHeaders -Body $TriggerFieldBody
 
 ### ---------------------------------------------------------------------
-### 5. Find the aBILLity-ID UDF's udfFieldID
+### 5. Find both UDFs' udfFieldIDs
 ### ---------------------------------------------------------------------
 
 $UdfFields = Invoke-RestMethod -Uri "$AutotaskBaseUri/v1.0/CompanyWebhookUdfFields/entityInformation/fields" `
     -Method Get -Headers $AutotaskAuthHeaders
 
-$AbillityUdfField = $UdfFields.fields |
+$UdfPicklist = $UdfFields.fields |
     Where-Object { $_.name -eq "udfFieldID" } |
-    Select-Object -ExpandProperty picklistValues |
-    Where-Object { $_.label -eq $UdfLabel }
-
-$AbillityUdfFieldId = [int]$AbillityUdfField.value
-Write-Host "aBILLity-ID UDF udfFieldID = $AbillityUdfFieldId"
+    Select-Object -ExpandProperty picklistValues
 
 ### ---------------------------------------------------------------------
-### 6. Register the UDF as a display-always field (not a trigger)
+### 6. Register both UDFs as display-always fields (not triggers)
+###
+### The name change is the only thing that fires the webhook; these two just
+### ride along in the payload so the receiver can read them.
 ### ---------------------------------------------------------------------
 
-$UdfTriggerBody = @{
-    UdfFieldID           = $AbillityUdfFieldId
-    IsSubscribedField    = $false
-    IsDisplayAlwaysField = $true
-    WebhookID            = $WebhookId
-} | ConvertTo-Json
+foreach ($Label in @($AbillityIdUdfLabel, $SyncFlagUdfLabel)) {
 
-Invoke-RestMethod -Uri "$AutotaskBaseUri/v1.0/CompanyWebhooks/$WebhookId/UdfFields" `
-    -Method Post -Headers $AutotaskAuthHeaders -Body $UdfTriggerBody
+    $UdfMatch = $UdfPicklist | Where-Object { $_.label -eq $Label }
+
+    if (-not $UdfMatch) {
+        Write-Error "No Company UDF found with the label '$Label' - check the spelling in Autotask (Admin > Features & Settings > Companies & Contacts > Company User-Defined Fields)."
+        continue
+    }
+
+    $UdfFieldId = [int]$UdfMatch.value
+    Write-Host "UDF '$Label' udfFieldID = $UdfFieldId"
+
+    $UdfTriggerBody = @{
+        UdfFieldID           = $UdfFieldId
+        IsSubscribedField    = $false
+        IsDisplayAlwaysField = $true
+        WebhookID            = $WebhookId
+    } | ConvertTo-Json
+
+    Invoke-RestMethod -Uri "$AutotaskBaseUri/v1.0/CompanyWebhooks/$WebhookId/UdfFields" `
+        -Method Post -Headers $AutotaskAuthHeaders -Body $UdfTriggerBody
+}
 
 Write-Host "Setup complete. Check Admin > Extensions & Integrations > Other Extensions & Tools > Webhooks in Autotask to confirm status."
 
@@ -142,11 +160,18 @@ function Sync-CompanyNameToAbillity {
     foreach ($f in $Payload.Fields) { $FieldsMap[$f.name] = $f.value }
 
     $NewName    = $FieldsMap["CompanyName"]
-    $AbillityId = $FieldsMap[$UdfLabel]
+    $SyncFlag   = $FieldsMap[$SyncFlagUdfLabel]
+    $AbillityId = $FieldsMap[$AbillityIdUdfLabel]
 
     if (-not $NewName) { return }                     # this update didn't touch the name
+
+    if ($AffirmativeValues -notcontains ("$SyncFlag").Trim().ToLower()) {
+        Write-Host "Autotask company $($Payload.Id) is not flagged for aBILLity sync ('$SyncFlagUdfLabel' = '$SyncFlag') - skipping"
+        return
+    }
+
     if (-not $AbillityId) {
-        Write-Warning "Autotask company $($Payload.Id) has no linked aBILLity ID — skipping"
+        Write-Warning "Autotask company $($Payload.Id) is flagged for sync but has no '$AbillityIdUdfLabel' - skipping"
         return
     }
 

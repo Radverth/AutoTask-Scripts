@@ -1,66 +1,175 @@
 # Autotask → aBILLity Company Name Sync
 
-When a Company's name changes in Autotask, this automatically updates the matching Company's name in aBILLity.
+When a Company's name changes in Autotask, this automatically updates the matching Company's name in aBILLity — but only for companies you've explicitly flagged for syncing.
 
 ## How it works
 
 Autotask → fires a webhook → a small hosted endpoint (this repo) → updates aBILLity via its API.
 
-You can host that endpoint on **Azure Functions** or **Cloudflare Workers** — pick one, they do exactly the same thing. Everything after the deployment step is identical either way.
+You can host that endpoint on **Cloudflare Workers** or **Azure Functions** — pick one, they do exactly the same thing.
+
+### The two UDFs
+
+The sync reads two Company user-defined fields in Autotask. Both must be right for anything to happen:
+
+| UDF label | What it holds | What it does |
+|---|---|---|
+| `Sync with aBillity (yes or no)` | `Yes` or `No` | The on switch. Anything other than yes — including blank — means this company is left alone. |
+| `aBillity Company ID` | the company's aBILLity ID | Where the update gets sent. |
+
+So a name change syncs only when the flag says yes **and** an aBILLity ID is present. Everything else is skipped and written to the log, never treated as an error. `Yes`, `yes`, `Y`, `True`, `1`, `On` and a ticked checkbox all count as yes; anything else counts as no.
 
 ## What's in this repo
 
 - **`autotask-abillity-sync.ps1`** — run this once, at the end, to register the webhook with Autotask. Host-agnostic: it just needs your two endpoint URLs.
-- **`AutotaskAbillitySync/`** — the Azure Function (PowerShell):
+- **`cloudflare-worker/`** — the Cloudflare Worker (JavaScript):
+  - `src/index.js` — one Worker serving both endpoints. This is the file you paste into the dashboard.
+  - `wrangler.toml` — config, if you deploy from the command line instead.
+  - `.dev.vars.example` — template for local testing secrets.
+- **`AutotaskAbillitySync/`** — the same thing as an Azure Function (PowerShell):
   - `CompanyNameSync/` — receives the webhook, updates aBILLity.
   - `CompanyNameSyncDeactivated/` — a required callback for if the webhook ever gets deactivated.
   - `local.settings.json.example` — template for your secrets (copy it, don't edit the original).
-- **`cloudflare-worker/`** — the same thing as a Cloudflare Worker (JavaScript):
-  - `src/index.js` — one Worker serving both endpoints.
-  - `wrangler.toml` — the Worker's config.
-  - `.dev.vars.example` — template for local testing secrets.
 
 ---
 
-## Setup — step by step
+# Setup
 
-### 1. Deploy the endpoint
+## Step 1 — Check your two UDFs in Autotask
 
-Do **either** 1A or 1B, not both.
+In Autotask: **Admin → Features & Settings → Companies & Contacts → Company User-Defined Fields**.
 
-<details open>
-<summary><strong>1A. Azure Functions</strong></summary>
+Confirm both of these exist and write down their labels **exactly** as they appear — capitals, spaces and brackets included. `aBillity Company ID` and `abillity company id` are different fields as far as this sync is concerned.
 
-**Create the Function App.** Azure Portal → **Create a resource** → **Function App**.
-- Hosting: **Consumption (Serverless)** — this stays free at this scale
-- Runtime stack: **PowerShell Core**
-- Pick any name, e.g. `autotask-abillity-sync`
+- `aBillity Company ID`
+- `Sync with aBillity (yes or no)`
 
-**Upload the code.** Easiest way: open the Function App → **Deployment Center**, or use the [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local):
+If your labels differ even slightly from the two above, use your real ones everywhere below.
+
+---
+
+## Step 2 — Create the Worker in the Cloudflare dashboard
+
+*(Prefer the command line? Skip to [Deploying with Wrangler instead](#deploying-with-wrangler-instead).)*
+
+### 2.1 — Make up your webhook token
+
+You need one long random string. This is what stops strangers POSTing to your Worker — Azure hands you one automatically, Cloudflare doesn't, so you invent it.
+
+Generate one any way you like:
+- macOS/Linux terminal: `openssl rand -hex 32`
+- Or a password manager's generator — 40+ characters, letters and numbers, no spaces or punctuation.
+
+Copy it somewhere safe for now. You'll paste it twice: once as a secret in step 2.5, once into the URLs in step 3.
+
+### 2.2 — Create the Worker
+
+1. Go to **https://dash.cloudflare.com** and sign in.
+2. In the left sidebar, click **Workers & Pages**. *(On newer dashboards this lives under **Compute**.)*
+3. Click **Create application** → **Create Worker**. *(Some versions show this as **Create** → **Workers** → **Start with Hello World!**)*
+4. In **Name**, type: `autotask-abillity-sync`
+5. Underneath, note the URL it shows you — `autotask-abillity-sync.<your-subdomain>.workers.dev`. **Write this down**, you need it in step 3.
+6. Click **Deploy**.
+
+This deploys Cloudflare's placeholder "Hello World" Worker. You replace it next.
+
+### 2.3 — Paste in the real code
+
+1. On the Worker's page, click **Edit code**. *(Top right — some versions label it `</>` **Edit code**.)* The online editor opens.
+2. Open [`cloudflare-worker/src/index.js`](cloudflare-worker/src/index.js) from this repo. Click into it, select everything (Ctrl+A / Cmd+A) and copy.
+3. Back in the Cloudflare editor, click into the code pane on the left, select everything (Ctrl+A / Cmd+A), delete it, and paste.
+4. Click **Deploy** at the top right, then confirm.
+
+You'll see an error in the editor's preview pane — that's expected. The Worker refuses to run until you've added its settings, which is the next step.
+
+### 2.4 — Add the two plain-text variables
+
+1. Leave the editor (**←** back arrow, top left) to return to the Worker's page.
+2. Go to the **Settings** tab → **Variables and Secrets**. *(Older dashboards: **Settings** → **Variables** → **Environment Variables**.)*
+3. Click **Add**, leave the type as **Text**, and add each of these:
+
+| Type | Variable name | Value |
+|---|---|---|
+| Text | `AutotaskAbillityIdUdfLabel` | `aBillity Company ID` |
+| Text | `AutotaskSyncFlagUdfLabel` | `Sync with aBillity (yes or no)` |
+
+These are your two UDF labels from step 1, character for character. Get one wrong and that field simply reads as blank — for the sync flag that means every company is skipped, silently.
+
+### 2.5 — Add the four secrets
+
+Same screen. Click **Add** again, but this time set the type to **Secret** for each:
+
+| Type | Variable name | Value |
+|---|---|---|
+| Secret | `AbillitySystemInformation` | from your aBILLity account |
+| Secret | `AbillityUserName` | your aBILLity API username |
+| Secret | `AbillityPassword` | your aBILLity API password |
+| Secret | `WebhookToken` | the random string you generated in step 2.1 |
+
+Secrets are write-only — once saved, the dashboard will never show you the value again, only that it exists. Keep your own copy of the webhook token.
+
+### 2.6 — Save
+
+Click **Deploy** (or **Save and deploy**) to apply the variables. The Worker restarts with its settings in place.
+
+---
+
+## Step 3 — Build your two URLs
+
+Take the `workers.dev` hostname from step 2.2 and add the paths and your token:
+
+```
+https://autotask-abillity-sync.<your-subdomain>.workers.dev/api/CompanyNameSync?code=<YOUR_WEBHOOK_TOKEN>
+https://autotask-abillity-sync.<your-subdomain>.workers.dev/api/CompanyNameSyncDeactivated?code=<YOUR_WEBHOOK_TOKEN>
+```
+
+Both paths are **case-sensitive**, and both need the `?code=` on the end.
+
+Quick check that it's alive — this should come back `unauthorized`, which means the Worker is running and rejecting a bad token:
+
 ```bash
-cd AutotaskAbillitySync
-func azure functionapp publish autotask-abillity-sync
+curl -X POST "https://autotask-abillity-sync.<your-subdomain>.workers.dev/api/CompanyNameSync?code=wrong" -d '{}'
 ```
-Both `CompanyNameSync` and `CompanyNameSyncDeactivated` will appear as functions inside the app.
 
-**Add your secrets.** Function App → **Configuration** → **Application settings** → add the four from the table below, using your real values.
+If you get `not configured` instead, a variable or secret from steps 2.4/2.5 is missing or misspelled.
 
-**Grab the two URLs.** Function App → open **CompanyNameSync** → **Get Function URL** → copy it. Repeat for **CompanyNameSyncDeactivated**. Each looks like:
-```
-https://autotask-abillity-sync.azurewebsites.net/api/CompanyNameSync?code=AbCdEf123...
-```
-The `?code=` is Azure's own function key — it's what stops strangers calling your endpoint. You don't have to set it up; it's there already.
+---
 
-</details>
+## Step 4 — Register the webhook with Autotask
 
-<details>
-<summary><strong>1B. Cloudflare Workers</strong></summary>
+Open `autotask-abillity-sync.ps1` and fill in the config block at the top:
 
-You'll need a Cloudflare account and [Node.js](https://nodejs.org) installed.
+- `$WebhookUrl` and `$DeactivationUrl` — the two URLs from step 3
+- Your Autotask API credentials
+- Your aBILLity credentials (same as step 2.5)
+- `$AbillityIdUdfLabel` and `$SyncFlagUdfLabel` — your two UDF labels from step 1
 
-**Set your UDF label.** Open `cloudflare-worker/wrangler.toml` and replace `<YOUR_UDF_LABEL>` with the exact label of your Autotask UDF.
+Then run the script in PowerShell, start to finish. It talks to Autotask and sets everything up — you don't need to touch the Autotask UI. It registers the company name as the trigger, and both UDFs as ride-along fields so your Worker can read them.
 
-**Add your secrets.** Unlike Azure, Workers have no built-in endpoint key, so you invent one — `WebhookToken` — and it goes in the URL as `?code=`. Make it long and random (e.g. `openssl rand -hex 32`).
+If a UDF label is wrong, the script says so by name rather than failing silently.
+
+---
+
+## Step 5 — Test it
+
+1. Pick a test company in Autotask. Set `Sync with aBillity (yes or no)` to **Yes** and put a real aBILLity ID in `aBillity Company ID`.
+2. In a terminal, start watching the logs: on the Worker's page click **Logs** → **Begin log stream** (or run `npx wrangler tail`).
+3. Change that company's name in Autotask.
+4. Within a minute or so you should see `Synced company <id> -> '<new name>'` in the log.
+5. Check the company in aBILLity — the name should match.
+
+Then test the off switch: set the flag to **No** on another company and rename it. The log should say it's *not flagged for aBILLity sync* and aBILLity should be untouched.
+
+That's it — it runs on its own from here.
+
+---
+
+# Deploying with Wrangler instead
+
+If you'd rather not use the dashboard. Needs [Node.js](https://nodejs.org) and a Cloudflare account.
+
+The two UDF labels live in `cloudflare-worker/wrangler.toml` — edit them there if yours differ. Then:
+
 ```bash
 cd cloudflare-worker
 npm install
@@ -68,57 +177,55 @@ npx wrangler secret put AbillitySystemInformation
 npx wrangler secret put AbillityUserName
 npx wrangler secret put AbillityPassword
 npx wrangler secret put WebhookToken
-```
-Each command prompts you to paste the value — nothing is written to disk.
-
-**Deploy.**
-```bash
 npx wrangler deploy
 ```
 
-**Your two URLs** are the deployed Worker's hostname plus the two paths, with your `WebhookToken` as `?code=`:
-```
-https://autotask-abillity-sync.<your-subdomain>.workers.dev/api/CompanyNameSync?code=<YOUR_WEBHOOK_TOKEN>
-https://autotask-abillity-sync.<your-subdomain>.workers.dev/api/CompanyNameSyncDeactivated?code=<YOUR_WEBHOOK_TOKEN>
-```
-`wrangler deploy` prints the hostname when it finishes.
+Each `secret put` prompts you to paste the value — nothing is written to disk. `deploy` prints your hostname when it finishes; carry on from step 3 above.
 
 To watch it run: `npx wrangler tail`. To test locally: copy `.dev.vars.example` to `.dev.vars`, fill it in, then `npx wrangler dev`.
 
-</details>
+---
 
-### 2. The settings, whichever host you chose
+# Hosting on Azure Functions instead
 
-| Name | Value | Azure | Cloudflare |
-|---|---|---|---|
-| `AutotaskUdfLabel` | the exact label of your Autotask UDF that stores the aBILLity Company ID | App setting | `wrangler.toml` |
-| `AbillitySystemInformation` | from your aBILLity account | App setting | secret |
-| `AbillityUserName` | your aBILLity API username | App setting | secret |
-| `AbillityPassword` | your aBILLity API password | App setting | secret |
-| `WebhookToken` | a long random string you invent | — (Azure supplies its own key) | secret |
+**Create the Function App.** Azure Portal → **Create a resource** → **Function App**.
+- Hosting: **Consumption (Serverless)** — this stays free at this scale
+- Runtime stack: **PowerShell Core**
+- Pick any name, e.g. `autotask-abillity-sync`
 
-### 3. Register the webhook with Autotask
-Open `autotask-abillity-sync.ps1` and fill in the top config block:
-- The two URLs from step 1 (including the `?code=` part)
-- Your Autotask API credentials
-- Your aBILLity credentials (same as step 2)
-- Your UDF label (same as step 2)
+**Upload the code.** Open the Function App → **Deployment Center**, or use the [Azure Functions Core Tools](https://learn.microsoft.com/en-us/azure/azure-functions/functions-run-local):
+```bash
+cd AutotaskAbillitySync
+func azure functionapp publish autotask-abillity-sync
+```
+Both `CompanyNameSync` and `CompanyNameSyncDeactivated` will appear as functions inside the app.
 
-Then just run the script in PowerShell, start to finish. It talks to Autotask and sets everything up — you don't need to touch the Autotask UI.
+**Add your settings.** Function App → **Configuration** → **Application settings** → add these five:
 
-### 4. Test it
-- Change a test company's name in Autotask
-- Watch the logs — Azure: Function App → **CompanyNameSync** → **Monitor**. Cloudflare: `npx wrangler tail`. You should see it fire within a minute or so.
-- Check the aBILLity company — the name should now match
+| Name | Value |
+|---|---|
+| `AutotaskAbillityIdUdfLabel` | `aBillity Company ID` |
+| `AutotaskSyncFlagUdfLabel` | `Sync with aBillity (yes or no)` |
+| `AbillitySystemInformation` | from your aBILLity account |
+| `AbillityUserName` | your aBILLity API username |
+| `AbillityPassword` | your aBILLity API password |
 
-That's it — it runs on its own from here.
+There's no `WebhookToken` here — Azure supplies its own function key instead.
+
+**Grab the two URLs.** Function App → open **CompanyNameSync** → **Get Function URL** → copy it. Repeat for **CompanyNameSyncDeactivated**. Each looks like:
+```
+https://autotask-abillity-sync.azurewebsites.net/api/CompanyNameSync?code=AbCdEf123...
+```
+That `?code=` is Azure's own function key — it's already there, you don't set it up. Carry on from step 4 above.
+
+To watch it run: Function App → **CompanyNameSync** → **Monitor**.
 
 ---
 
-## A couple of things to know
+# A couple of things to know
 
-- **Costs nothing at this scale** — both Azure's free monthly grant (1M runs) and Cloudflare's free tier (100k requests/day) are far more than a name-change webhook will ever use.
-- **Never commit your secrets** — `local.settings.json` (Azure) and `.dev.vars` (Cloudflare) are both gitignored. Only the `.example` files belong in git.
+- **Costs nothing at this scale** — Cloudflare's free tier (100k requests/day) and Azure's free monthly grant (1M runs) are both far more than a name-change webhook will ever use.
+- **Never commit your secrets** — `.dev.vars` (Cloudflare) and `local.settings.json` (Azure) are both gitignored. Only the `.example` files belong in git.
 - **Names over 50 characters get shortened** automatically — that's aBILLity's own limit, not a bug.
-- If a company has no aBILLity ID in its UDF, it's skipped silently rather than erroring — check the logs if you're expecting a sync that didn't happen.
+- **Nothing syncs by default.** A company with a blank sync flag is skipped, so switching a company on is a deliberate act. If a sync you expected didn't happen, check that flag first, then the aBILLity ID, then the logs.
 - **Switching hosts later** is just a re-run of `autotask-abillity-sync.ps1` with the new URLs (delete the old webhook in Autotask first, under Admin → Extensions & Integrations → Other Extensions & Tools → Webhooks).

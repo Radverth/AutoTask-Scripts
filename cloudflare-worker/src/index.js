@@ -7,6 +7,10 @@
  *   POST /api/CompanyNameSync             <- the name-change webhook
  *   POST /api/CompanyNameSyncDeactivated  <- Autotask's deactivation callback
  *
+ * A company is only synced when BOTH of its UDFs say so: the sync-flag UDF
+ * reads yes, and the ID UDF holds an aBILLity Company ID. Anything else is
+ * skipped and logged.
+ *
  * Azure Functions authenticate callers with a built-in `?code=` key. Workers
  * have no equivalent, so we check the same-shaped `?code=` against the
  * WebhookToken secret ourselves.
@@ -17,8 +21,13 @@ const ABILLITY_API_BASE = "https://api.abillity.co.uk/api";
 // aBILLity caps Company Name at 50 characters.
 const ABILLITY_NAME_MAX_LENGTH = 50;
 
+// What the sync-flag UDF can say for "yes". Anything else - including blank -
+// means don't sync, so a company is never synced by accident.
+const AFFIRMATIVE_VALUES = new Set(["yes", "y", "true", "1", "on", "checked"]);
+
 const REQUIRED_SETTINGS = [
-  "AutotaskUdfLabel",
+  "AutotaskAbillityIdUdfLabel",
+  "AutotaskSyncFlagUdfLabel",
   "AbillitySystemInformation",
   "AbillityUserName",
   "AbillityPassword",
@@ -71,13 +80,25 @@ async function handleCompanyNameSync(request, env) {
   );
 
   let newName = fields.get("CompanyName");
-  const abillityId = fields.get(env.AutotaskUdfLabel);
+  const syncFlag = fields.get(env.AutotaskSyncFlagUdfLabel);
+  const abillityId = fields.get(env.AutotaskAbillityIdUdfLabel);
 
   // This update didn't touch the name.
   if (!newName) return text(200, "ok");
 
+  if (!isAffirmative(syncFlag)) {
+    console.log(
+      `Autotask company ${payload.Id} is not flagged for aBILLity sync ` +
+        `("${env.AutotaskSyncFlagUdfLabel}" = "${syncFlag ?? ""}") - skipping`
+    );
+    return text(200, "ok");
+  }
+
   if (!abillityId) {
-    console.warn(`Autotask company ${payload.Id} has no linked aBILLity ID - skipping`);
+    console.warn(
+      `Autotask company ${payload.Id} is flagged for sync but has no ` +
+        `"${env.AutotaskAbillityIdUdfLabel}" - skipping`
+    );
     return text(200, "ok");
   }
 
@@ -116,6 +137,13 @@ async function handleDeactivated(request) {
   const body = await request.text();
   console.warn(`Autotask webhook deactivated: ${body}`);
   return text(200, "ok");
+}
+
+/** True only for an explicit yes - a checkbox tick, or Yes/True/1/On as text. */
+function isAffirmative(value) {
+  if (value === true) return true;
+  if (value === null || value === undefined) return false;
+  return AFFIRMATIVE_VALUES.has(String(value).trim().toLowerCase());
 }
 
 function text(status, body) {

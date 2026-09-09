@@ -6,4 +6,5 @@ AbillityPassword = "<YOUR_ABILLITY_PASSWORD>"
 WebhookToken = "<A_LONG_RANDOM_STRING>"
 
 # Also readable from wrangler.toml [vars] - override here for local testing.
-AutotaskUdfLabel = "<YOUR_UDF_LABEL>"
+AutotaskAbillityIdUdfLabel = "aBillity Company ID"
+AutotaskSyncFlagUdfLabel = "Sync with aBillity (yes or no)"
