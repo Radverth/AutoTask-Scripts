@@ -24,6 +24,7 @@ So a name change syncs only when the flag says yes **and** an aBILLity ID is pre
 - **`autotask-abillity-sync.ps1`** — run this once, at the end, to register the webhook with Autotask. Host-agnostic: it just needs your two endpoint URLs.
 - **`test-autotask-credentials.ps1`** — checks your Autotask zone and credentials without running the full setup, and without spending failed login attempts you didn't mean to spend.
 - **`postman/autotask-abillity-sync.postman_collection.json`** — the same webhook setup as an importable Postman collection, if you'd rather click than run PowerShell.
+- **`test-abillity.ps1`** and **`postman/abillity-test.postman_collection.json`** — test the aBILLity side on its own: credentials, company id, and the rename the Worker performs.
 - **`cloudflare-worker/`** — the Cloudflare Worker (JavaScript):
   - `src/index.js` — one Worker serving both endpoints. This is the file you paste into the dashboard.
   - `wrangler.toml` — config, if you deploy from the command line instead.
@@ -507,6 +508,52 @@ https://autotask-abillity-sync.azurewebsites.net/api/CompanyNameSync?code=AbCdEf
 That `?code=` is Azure's own function key — it's already there, you don't set it up. Carry on from step 4 above.
 
 To watch it run: Function App → **CompanyNameSync** → **Monitor**.
+
+---
+
+# Testing the aBILLity side on its own
+
+If a sync doesn't work, it helps to know which half is broken. These test aBILLity directly — no Autotask, no Cloudflare.
+
+> **These write to live billing data.** Request 2 / `-NewName` genuinely renames a company in aBILLity. Use one you're willing to rename, and restore it afterwards. The read step alone is enough to check credentials and a company id.
+
+### Postman
+
+Import [`postman/abillity-test.postman_collection.json`](postman/abillity-test.postman_collection.json). Fill in `systemInformation`, `abillityUserName`, `abillityPassword`, `companyId`, and `testName`.
+
+| # | Request | Does |
+|---|---|---|
+| 1 | Get company | **Read-only.** Shows the current name and stores it in `originalName`. |
+| 2 | Rename company | **Writes.** The exact PATCH the Worker makes. |
+| 3 | Restore original name | Puts back what request 1 captured. |
+
+Run 1 first — it's what makes 3 possible. To check credentials only, run 1 and stop.
+
+### PowerShell
+
+Read-only — looks the company up, changes nothing:
+
+```powershell
+.\test-abillity.ps1 -CompanyId 789 -SystemInformation "..." -UserName "..."
+```
+
+Test the rename (asks for a typed `RENAME`, then offers to restore):
+
+```powershell
+.\test-abillity.ps1 -CompanyId 789 -SystemInformation "..." -UserName "..." -NewName "Test Rename - safe to ignore"
+```
+
+Omit `-Password` and it prompts, so it stays out of your shell history. If aBILLity has no GET for a single company, add `-SkipRead`.
+
+### What the results mean
+
+| Result | Meaning |
+|---|---|
+| Read works, rename works | aBILLity is fine. Any failure is on the Autotask or Worker side. |
+| `401` | aBILLity rejected the credentials — the same three values the Worker holds as secrets. |
+| `403` | Credentials valid, but not permitted for this company. |
+| `404` | No company with that id — so the value in the `aBillity Company ID` UDF is wrong, and the Worker would fail identically. |
+| HTML instead of JSON | The request never reached the API. |
 
 ---
 

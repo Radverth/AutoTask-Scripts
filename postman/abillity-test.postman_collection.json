@@ -1,0 +1,243 @@
+{
+  "info": {
+    "name": "aBILLity API test",
+    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  1 reads the company and stores its current name. Safe, changes nothing.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Get company (read-only)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "SystemInformation",
+            "value": "{{systemInformation}}"
+          },
+          {
+            "key": "username",
+            "value": "{{abillityUserName}}"
+          },
+          {
+            "key": "password",
+            "value": "{{abillityPassword}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://api.abillity.co.uk/api/company/{{companyId}}"
+        },
+        "description": "Looks the company up and stores its current name in {{originalName}}, so request 3 can put it back.\n\nChanges nothing. Always run this first.\n\n404 means no company with that id - which is exactly what the Worker would hit if the 'aBillity Company ID' UDF is wrong."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = pm.response.code;",
+              "",
+              "if (code === 401) { console.log('401 - aBILLity rejected the credentials.'); }",
+              "if (code === 403) { console.log('403 - credentials valid, but not allowed to read this company.'); }",
+              "if (code === 404) { console.log('404 - no company with id ' + pm.collectionVariables.get('companyId') + '.'); }",
+              "if (code === 405) { console.log('405 - no GET on this endpoint. Skip to request 2, but note that'); }",
+              "if (code === 405) { console.log('      nothing will capture the original name, so restoring is manual.'); }",
+              "",
+              "let name = null;",
+              "if (code === 200) {",
+              "    let body = {};",
+              "    try { body = pm.response.json(); } catch (e) { body = {}; }",
+              "    const candidates = [body, body.company, body.data, (body.items || [])[0]];",
+              "    for (const c of candidates) {",
+              "        if (c && c.Name) { name = c.Name; break; }",
+              "        if (c && c.name) { name = c.name; break; }",
+              "    }",
+              "}",
+              "",
+              "if (name) {",
+              "    pm.collectionVariables.set('originalName', name);",
+              "    console.log('Current name: ' + JSON.stringify(name));",
+              "    console.log('Stored in {{originalName}} - request 3 restores it.');",
+              "} else if (code === 200) {",
+              "    console.log('Read OK but no Name field found. Check the body; restoring will be manual.');",
+              "}",
+              "",
+              "pm.test('Company found', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Rename company (WRITES LIVE DATA)",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "SystemInformation",
+            "value": "{{systemInformation}}"
+          },
+          {
+            "key": "username",
+            "value": "{{abillityUserName}}"
+          },
+          {
+            "key": "password",
+            "value": "{{abillityPassword}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://api.abillity.co.uk/api/company/{{companyId}}"
+        },
+        "description": "The exact call the Worker makes when an Autotask company is renamed.\n\n*** THIS CHANGES LIVE BILLING DATA. ***\n\nRun request 1 first so the original name is captured, then request 3 to put it back.\n\naBILLity caps the name at 50 characters and the Worker truncates to match - keep {{testName}} under 50 unless you are deliberately testing that.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"Name\": \"{{testName}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const ok = pm.response.code >= 200 && pm.response.code < 300;",
+              "",
+              "if (ok) {",
+              "    console.log('Rename accepted - this is what the Worker does.');",
+              "    console.log('Run request 3 to restore ' + JSON.stringify(pm.collectionVariables.get('originalName')));",
+              "} else {",
+              "    console.log('Rename failed with ' + pm.response.code + '.');",
+              "    console.log('The Worker would log this and return \"sync failed\".');",
+              "}",
+              "",
+              "pm.test('Rename accepted', function () {",
+              "    pm.expect(pm.response.code, 'expected 2xx').to.be.within(200, 299);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Restore original name",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "SystemInformation",
+            "value": "{{systemInformation}}"
+          },
+          {
+            "key": "username",
+            "value": "{{abillityUserName}}"
+          },
+          {
+            "key": "password",
+            "value": "{{abillityPassword}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://api.abillity.co.uk/api/company/{{companyId}}"
+        },
+        "description": "Puts the name back to whatever request 1 captured in {{originalName}}.\n\nIf {{originalName}} is empty, request 1 did not capture it - set the name by hand in aBILLity instead of running this.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"Name\": \"{{originalName}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const original = pm.collectionVariables.get('originalName');",
+              "",
+              "if (!original) {",
+              "    console.log('WARNING: {{originalName}} is empty - this request just sent a blank name.');",
+              "    console.log('Fix the company name by hand in aBILLity.');",
+              "}",
+              "",
+              "if (pm.response.code >= 200 && pm.response.code < 300) {",
+              "    console.log('Restored to ' + JSON.stringify(original));",
+              "} else {",
+              "    console.log('RESTORE FAILED (' + pm.response.code + '). The company is still renamed.');",
+              "    console.log('Put it back by hand in aBILLity.');",
+              "}",
+              "",
+              "pm.test('Restored', function () {",
+              "    pm.expect(pm.response.code, 'expected 2xx').to.be.within(200, 299);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "systemInformation",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "abillityUserName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "abillityPassword",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "companyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testName",
+      "value": "Test Rename - safe to ignore",
+      "type": "string"
+    },
+    {
+      "key": "originalName",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}
