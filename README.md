@@ -348,7 +348,7 @@ Same four headers.
 
 *List* shows every Company webhook on the account. *Delete* removes whichever id is in `webhookId` — set it by hand to remove a different one. Between them you can undo a duplicate and start over.
 
-Then skip to step 5.
+Then skip to step 6 to test it.
 
 ### Option B — PowerShell
 
@@ -365,12 +365,45 @@ If a UDF label is wrong, the script says so by name rather than failing silently
 
 ---
 
-## Step 5 — Test it
+## Step 5 — Where to see the logs
+
+Everything the Worker does — every sync, every skip and why — goes to its log. There are two ways to read it, and the difference matters.
+
+### Live tail (nothing is kept)
+
+Cloudflare dashboard → **Workers & Pages** → your Worker → **Logs** tab → **Begin log stream**.
+
+This streams events *while you watch*. It shows nothing that happened before you opened it, and stops when you close the tab. Fine for testing, useless for "why didn't that company sync yesterday".
+
+From a terminal, the same thing: `npx wrangler tail`
+
+### Stored logs (searchable after the fact)
+
+Worker → **Settings** → **Observability** → enable **Workers Logs**.
+
+Once on, invocations are kept and you can search them in the **Logs** tab without streaming. Retention and volume limits depend on your plan — the Observability screen states yours. Turn this on if you want to diagnose anything you weren't watching live.
+
+*(Cloudflare moves these around fairly often. If the menu names differ, look for **Logs** on the Worker and **Observability** in its Settings.)*
+
+### What you'll see
+
+| Log line | Meaning |
+|---|---|
+| `Synced company <id> -> '<name>'` | Worked. |
+| `... is not flagged for aBILLity sync ("Sync with aBillity (yes or no)" = "No")` | Normal skip — the flag isn't yes. |
+| `... is flagged for sync but has no "aBillity Company ID"` | **Warning.** Someone switched this company on but left the ID blank. |
+| `aBILLity PATCH failed for company <id>: <status>` | **Error.** Reached aBILLity, which refused. Status and body are included. |
+| `Missing configuration: ...` | A variable or secret from step 2.4/2.5 isn't set. |
+| *nothing at all* | The webhook never reached the Worker — an Autotask-side problem, not a Worker one. |
+
+That last row is the useful one: no log entry means Autotask didn't call you, so check the webhook in Autotask rather than the Worker.
+
+## Step 6 — Test it
 
 1. Pick a test company in Autotask. Set `Sync with aBillity (yes or no)` to **Yes** and put a real aBILLity ID in `aBillity Company ID`.
-2. In a terminal, start watching the logs: on the Worker's page click **Logs** → **Begin log stream** (or run `npx wrangler tail`).
+2. Start the log stream (above) **before** you make the change — a live tail won't show you anything retrospectively.
 3. Change that company's name in Autotask.
-4. Within a minute or so you should see `Synced company <id> -> '<new name>'` in the log.
+4. Within a minute or so you should see `Synced company <id> -> '<new name>'`.
 5. Check the company in aBILLity — the name should match.
 
 Then test the off switch: set the flag to **No** on another company and rename it. The log should say it's *not flagged for aBILLity sync* and aBILLity should be untouched.
