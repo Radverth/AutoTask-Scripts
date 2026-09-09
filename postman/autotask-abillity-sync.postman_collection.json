@@ -1,0 +1,584 @@
+{
+  "info": {
+    "name": "Autotask -> aBILLity Company Name Sync",
+    "description": "Registers the Autotask webhook that drives the company name sync, as an alternative to running autotask-abillity-sync.ps1.\n\nSETUP\n  Open the collection's Variables tab and fill in userName, apiIntegrationCode, secret, webhookUrl, deactivationUrl, notificationEmail, and your two UDF labels.\n  Leave baseUrl and everything ending in Id blank - the requests fill those in as they run.\n\nORDER\n  Run requests 0 to 7 in order, top to bottom. Each one stores what the next needs.\n  Request 0 sends no credentials and is always safe to run.\n  Request 2 creates the webhook - run it only once.\n\nWATCH THE CONSOLE\n  Open Postman's console (View > Show Postman Console) before running. The test scripts log what they captured, and request 5 lists every Company UDF label Autotask reports if yours do not match.\n\nA NOTE ON LOCKOUTS\n  A 401 means either wrong credentials or a locked account - they are indistinguishable. Repeated failures lock the account, so do not retry request 1 over and over. Fix the values, or get the account unlocked, then try once.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Get zone information (no credentials sent)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}"
+        },
+        "description": "Finds which Autotask server your account lives on and stores it as {{baseUrl}}.\n\nThis request sends NO credentials, so it cannot lock anything. Run it first.\n\nIf it does not return a url, the username is not a recognised Autotask API user."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('Zone lookup returned a url', function () {",
+              "    pm.expect(json.url, 'no url in response').to.be.a('string');",
+              "});",
+              "",
+              "if (json.url) {",
+              "    const base = json.url.replace(/\\/+$/, '');",
+              "    pm.collectionVariables.set('baseUrl', base);",
+              "    console.log('baseUrl set to: ' + base);",
+              "    console.log('It should end in /ATServicesRest - if it does not, stop and check.');",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "1. Test credentials",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/Companies/entityInformation"
+        },
+        "description": "One authenticated request, to confirm the credentials before creating anything.\n\n200 = credentials good.\n401 = rejected (wrong values, OR the account is locked - both look the same).\n403 = credentials valid but this API user lacks permission.\n\nDo not hammer this. Each failure counts toward a lockout."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "    console.log('Credentials accepted.');",
+              "} else if (pm.response.code === 401) {",
+              "    console.log('401 - credentials rejected, OR the account is locked.');",
+              "    console.log('A locked account looks identical to a wrong password here.');",
+              "    console.log('Do not retry repeatedly - each attempt counts toward a lockout.');",
+              "} else if (pm.response.code === 403) {",
+              "    console.log('403 - credentials are VALID but lack permission (Security Level).');",
+              "} else {",
+              "    console.log('Unexpected status ' + pm.response.code);",
+              "}",
+              "",
+              "pm.test('Credentials accepted (200)', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Create the webhook",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/CompanyWebhooks"
+        },
+        "description": "Creates the webhook and stores its id as {{webhookId}}.\n\nOnly run this ONCE. Running it again creates a duplicate webhook - use 'List webhooks' and 'Delete webhook' at the bottom to tidy up.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"IsActive\": true,\n  \"DeactivationUrl\": \"{{deactivationUrl}}\",\n  \"IsSubscribedToUpdateEvents\": true,\n  \"Name\": \"Company Name -> aBILLity Sync\",\n  \"SecretKey\": \"{{$guid}}\",\n  \"SendThresholdExceededNotification\": true,\n  \"WebhookUrl\": \"{{webhookUrl}}\",\n  \"NotificationEmailAddress\": \"{{notificationEmail}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const json = pm.response.json();",
+              "",
+              "pm.test('Webhook created', function () {",
+              "    pm.response.to.have.status(200);",
+              "    pm.expect(json.itemId, 'no itemId returned').to.be.ok;",
+              "});",
+              "",
+              "if (json.itemId) {",
+              "    pm.collectionVariables.set('webhookId', json.itemId);",
+              "    console.log('webhookId set to: ' + json.itemId);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Find the CompanyName fieldID",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/CompanyWebhookFields/entityInformation/fields"
+        },
+        "description": "Looks up the numeric id Autotask uses for the CompanyName field, and stores it as {{companyNameFieldId}}."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const fields = (pm.response.json().fields) || [];",
+              "const fieldIdField = fields.find(f => f.name === 'fieldID');",
+              "const values = (fieldIdField && fieldIdField.picklistValues) || [];",
+              "const match = values.find(v => v.label === 'CompanyName');",
+              "",
+              "pm.test('CompanyName field found', function () {",
+              "    pm.expect(match, 'no picklist value labelled CompanyName').to.be.ok;",
+              "});",
+              "",
+              "if (match) {",
+              "    pm.collectionVariables.set('companyNameFieldId', match.value);",
+              "    console.log('companyNameFieldId set to: ' + match.value);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Register CompanyName as the trigger field",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields"
+        },
+        "description": "Makes a change to the company name the thing that fires the webhook.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"FieldID\": \"{{companyNameFieldId}}\",\n  \"IsSubscribedField\": true,\n  \"IsDisplayAlwaysField\": true,\n  \"WebhookID\": \"{{webhookId}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Trigger field registered', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Find both UDF field IDs",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/CompanyWebhookUdfFields/entityInformation/fields"
+        },
+        "description": "Finds the numeric ids for your two Company UDFs, matching on the labels in {{abillityIdUdfLabel}} and {{syncFlagUdfLabel}}.\n\nIf either is not found, the console lists every Company UDF label Autotask reports - copy the exact spelling from there into the collection variables."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const fields = (pm.response.json().fields) || [];",
+              "const udfField = fields.find(f => f.name === 'udfFieldID');",
+              "const values = (udfField && udfField.picklistValues) || [];",
+              "",
+              "const idLabel = pm.collectionVariables.get('abillityIdUdfLabel');",
+              "const flagLabel = pm.collectionVariables.get('syncFlagUdfLabel');",
+              "",
+              "const idMatch = values.find(v => v.label === idLabel);",
+              "const flagMatch = values.find(v => v.label === flagLabel);",
+              "",
+              "if (!idMatch || !flagMatch) {",
+              "    console.log('--- Company UDF labels Autotask actually reports ---');",
+              "    values.map(v => v.label).sort().forEach(l => console.log('  ' + JSON.stringify(l)));",
+              "    console.log('---------------------------------------------------');",
+              "    console.log('Copy the exact spelling into the collection variables.');",
+              "}",
+              "",
+              "pm.test('aBILLity ID UDF found: ' + idLabel, function () {",
+              "    pm.expect(idMatch, 'no UDF labelled ' + JSON.stringify(idLabel)).to.be.ok;",
+              "});",
+              "",
+              "pm.test('Sync flag UDF found: ' + flagLabel, function () {",
+              "    pm.expect(flagMatch, 'no UDF labelled ' + JSON.stringify(flagLabel)).to.be.ok;",
+              "});",
+              "",
+              "if (idMatch) {",
+              "    pm.collectionVariables.set('abillityIdUdfFieldId', idMatch.value);",
+              "    console.log('abillityIdUdfFieldId set to: ' + idMatch.value);",
+              "}",
+              "if (flagMatch) {",
+              "    pm.collectionVariables.set('syncFlagUdfFieldId', flagMatch.value);",
+              "    console.log('syncFlagUdfFieldId set to: ' + flagMatch.value);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Register UDF: {{abillityIdUdfLabel}}",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields"
+        },
+        "description": "Adds this UDF to the webhook payload as a display-always field. It does not trigger the webhook - it just rides along so the receiver can read it.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"UdfFieldID\": \"{{abillityIdUdfFieldId}}\",\n  \"IsSubscribedField\": false,\n  \"IsDisplayAlwaysField\": true,\n  \"WebhookID\": \"{{webhookId}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('UDF registered', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Register UDF: {{syncFlagUdfLabel}}",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "ApiIntegrationcode",
+            "value": "{{apiIntegrationCode}}"
+          },
+          {
+            "key": "UserName",
+            "value": "{{userName}}"
+          },
+          {
+            "key": "Secret",
+            "value": "{{secret}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields"
+        },
+        "description": "Adds this UDF to the webhook payload as a display-always field. It does not trigger the webhook - it just rides along so the receiver can read it.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"UdfFieldID\": \"{{syncFlagUdfFieldId}}\",\n  \"IsSubscribedField\": false,\n  \"IsDisplayAlwaysField\": true,\n  \"WebhookID\": \"{{webhookId}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('UDF registered', function () {",
+              "    pm.response.to.have.status(200);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Utilities",
+      "item": [
+        {
+          "name": "List webhooks",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/query?search={\"filter\":[{\"op\":\"gte\",\"field\":\"id\",\"value\":0}]}"
+            },
+            "description": "Shows every Company webhook on the account. Use it to confirm what was created, or to find the id of a duplicate you want to remove."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const items = (pm.response.json().items) || [];",
+                  "console.log(items.length + ' webhook(s):');",
+                  "items.forEach(w => console.log('  id ' + w.id + '  ' + w.name + '  active=' + w.isActive));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delete webhook {{webhookId}}",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}"
+            },
+            "description": "Deletes the webhook currently in {{webhookId}}. Use this to clean up a duplicate or start over.\n\nSet {{webhookId}} by hand first if you want to delete a different one."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Webhook deleted', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "userName",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "apiIntegrationCode",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "secret",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "webhookUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "deactivationUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "notificationEmail",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "abillityIdUdfLabel",
+      "value": "aBillity Company ID",
+      "type": "string"
+    },
+    {
+      "key": "syncFlagUdfLabel",
+      "value": "Sync with aBillity (yes or no)",
+      "type": "string"
+    },
+    {
+      "key": "baseUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "webhookId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "companyNameFieldId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "abillityIdUdfFieldId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "syncFlagUdfFieldId",
+      "value": "",
+      "type": "string"
+    }
+  ]
+}

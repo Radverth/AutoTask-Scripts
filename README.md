@@ -23,6 +23,7 @@ So a name change syncs only when the flag says yes **and** an aBILLity ID is pre
 
 - **`autotask-abillity-sync.ps1`** — run this once, at the end, to register the webhook with Autotask. Host-agnostic: it just needs your two endpoint URLs.
 - **`test-autotask-credentials.ps1`** — checks your Autotask zone and credentials without running the full setup, and without spending failed login attempts you didn't mean to spend.
+- **`postman/autotask-abillity-sync.postman_collection.json`** — the same webhook setup as an importable Postman collection, if you'd rather click than run PowerShell.
 - **`cloudflare-worker/`** — the Cloudflare Worker (JavaScript):
   - `src/index.js` — one Worker serving both endpoints. This is the file you paste into the dashboard.
   - `wrangler.toml` — config, if you deploy from the command line instead.
@@ -137,6 +138,32 @@ If you get `not configured` instead, a variable or secret from steps 2.4/2.5 is 
 ---
 
 ## Step 4 — Register the webhook with Autotask
+
+You can do this with PowerShell **or** Postman — they make the same API calls. If PowerShell is giving you trouble (corporate proxy, TLS interception, execution policy), use Postman.
+
+### Option A — Postman
+
+Import [`postman/autotask-abillity-sync.postman_collection.json`](postman/autotask-abillity-sync.postman_collection.json) (**Import → File**).
+
+1. Open the collection's **Variables** tab and fill in `userName`, `apiIntegrationCode`, `secret`, `webhookUrl`, `deactivationUrl`, `notificationEmail`, and your two UDF labels. Leave `baseUrl` and everything ending in `Id` blank — the requests fill those in as they run. Remember to hit **Save**.
+2. Open the console first: **View → Show Postman Console**. The scripts log what they captured, and it's where request 5 lists your real UDF labels if they don't match.
+3. Run requests **0 → 7 in order**, top to bottom. Each stores what the next one needs.
+
+| # | Request | What it does |
+|---|---|---|
+| 0 | Get zone information | Finds your server, sets `baseUrl`. **Sends no credentials** — always safe to run. |
+| 1 | Test credentials | One authenticated call. 200 good, 401 rejected *or locked*, 403 valid but no permission. |
+| 2 | Create the webhook | Sets `webhookId`. **Run once** — running again makes a duplicate. |
+| 3 | Find CompanyName fieldID | Sets `companyNameFieldId`. |
+| 4 | Register the trigger field | Makes a name change fire the webhook. |
+| 5 | Find both UDF field IDs | Sets both. Lists all your UDF labels in the console if either doesn't match. |
+| 6, 7 | Register each UDF | Adds them to the payload as ride-along fields. |
+
+Under **Utilities** there's *List webhooks* (see what exists) and *Delete webhook* (undo a duplicate, or start over).
+
+Then skip to step 5.
+
+### Option B — PowerShell
 
 Open `autotask-abillity-sync.ps1` and fill in the config block at the top:
 
