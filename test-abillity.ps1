@@ -21,6 +21,13 @@
 
     THIS WRITES TO LIVE BILLING DATA. Use a company you are willing to rename,
     and let it restore the original name when it offers.
+
+    Checked against aBILLity's published API (api.abillity.co.uk/GettingStarted):
+      GET   api/company/{id}  returns a CompanyView with Name at the top level
+      PATCH api/company/{id}  updates selected details    <- what the Worker uses
+      PUT   api/company/{id}  updates ALL details         <- would blank other fields
+      headers: SystemInformation, username, password
+      Name: string, 0-50 characters. id: integer.
 #>
 
 param(
@@ -64,7 +71,11 @@ $Headers = @{
     "Accept"            = "application/json"
 }
 
-$CompanyUri = "$ApiBase/company/$([uri]::EscapeDataString($CompanyId))"
+if ($CompanyId -notmatch '^\d+$') {
+    throw "CompanyId must be a whole number - aBILLity documents the company id as an integer. Got '$CompanyId'."
+}
+
+$CompanyUri = "$ApiBase/company/$CompanyId"
 
 $SupportsSkip = (Get-Command Invoke-WebRequest).Parameters.ContainsKey("SkipHttpErrorCheck")
 
@@ -130,15 +141,15 @@ function Show-Result {
 
 function Get-CompanyName {
     param([string] $Json)
+
+    # GET api/company/{id} returns a CompanyView with Name at the top level.
     if ([string]::IsNullOrWhiteSpace($Json)) { return $null }
     try {
         $Parsed = $Json | ConvertFrom-Json
     } catch {
         return $null
     }
-    foreach ($Candidate in @($Parsed, $Parsed.company, $Parsed.data, ($Parsed.items | Select-Object -First 1))) {
-        if ($Candidate -and $Candidate.Name) { return [string]$Candidate.Name }
-    }
+    if ($Parsed.Name) { return [string]$Parsed.Name }
     return $null
 }
 
@@ -173,8 +184,11 @@ if (-not $SkipRead) {
         }
         401 {
             Write-Host ""
-            Write-Host "  HTTP 401 - aBILLity rejected the credentials." -ForegroundColor Red
-            Write-Host "  Check SystemInformation, UserName and Password."
+            Write-Host "  HTTP 401 - rejected." -ForegroundColor Red
+            Write-Host "  aBILLity returns 401 for BOTH a bad credential and a user without"
+            Write-Host "  company permissions, so check both:"
+            Write-Host "    * SystemInformation, UserName and Password"
+            Write-Host "    * that this user is permitted to view companies"
             return
         }
         403 {
@@ -184,9 +198,10 @@ if (-not $SkipRead) {
         }
         404 {
             Write-Host ""
-            Write-Host "  HTTP 404 - no company with ID $CompanyId." -ForegroundColor Red
-            Write-Host "  This is the value that goes in the 'aBillity Company ID' UDF -"
-            Write-Host "  if it is wrong, the Worker will fail the same way."
+            Write-Host "  HTTP 404 - not found." -ForegroundColor Red
+            Write-Host "  Either there is no company $CompanyId, or this database has no"
+            Write-Host "  companies at all. This is the value that goes in the"
+            Write-Host "  'aBillity Company ID' UDF - if it is wrong, the Worker fails the same way."
             return
         }
         405 {

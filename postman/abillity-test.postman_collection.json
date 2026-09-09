@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "aBILLity API test",
-    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  1 reads the company and stores its current name. Safe, changes nothing.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
+    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nChecked against api.abillity.co.uk/GettingStarted: GET returns a CompanyView with Name at\nthe top level, PATCH updates selected details, PUT would replace ALL details, and the id is\nan integer. Name is limited to 50 characters.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  1 reads the company and stores its current name. Safe, changes nothing.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -44,9 +44,9 @@
             "exec": [
               "const code = pm.response.code;",
               "",
-              "if (code === 401) { console.log('401 - aBILLity rejected the credentials.'); }",
+              "if (code === 401) { console.log('401 - bad credentials OR no company permissions. aBILLity uses 401 for both.'); }",
               "if (code === 403) { console.log('403 - credentials valid, but not allowed to read this company.'); }",
-              "if (code === 404) { console.log('404 - no company with id ' + pm.collectionVariables.get('companyId') + '.'); }",
+              "if (code === 404) { console.log('404 - no company ' + pm.collectionVariables.get('companyId') + ', or no companies in this database.'); }",
               "if (code === 405) { console.log('405 - no GET on this endpoint. Skip to request 2, but note that'); }",
               "if (code === 405) { console.log('      nothing will capture the original name, so restoring is manual.'); }",
               "",
@@ -54,11 +54,8 @@
               "if (code === 200) {",
               "    let body = {};",
               "    try { body = pm.response.json(); } catch (e) { body = {}; }",
-              "    const candidates = [body, body.company, body.data, (body.items || [])[0]];",
-              "    for (const c of candidates) {",
-              "        if (c && c.Name) { name = c.Name; break; }",
-              "        if (c && c.name) { name = c.name; break; }",
-              "    }",
+              "    // CompanyView returns Name at the top level.",
+              "    if (body.Name) { name = body.Name; }",
               "}",
               "",
               "if (name) {",

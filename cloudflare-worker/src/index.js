@@ -14,6 +14,12 @@
  * Azure Functions authenticate callers with a built-in `?code=` key. Workers
  * have no equivalent, so we check the same-shaped `?code=` against the
  * WebhookToken secret ourselves.
+ *
+ * Checked against aBILLity's published API (api.abillity.co.uk/GettingStarted):
+ *   PATCH api/company/{id}  updates selected details   <- what we use
+ *   PUT   api/company/{id}  updates ALL details        <- do not use
+ *   headers: SystemInformation, username, password
+ *   Name: string, 0-50 characters. id: integer.
  */
 
 const ABILLITY_API_BASE = "https://api.abillity.co.uk/api";
@@ -38,17 +44,54 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
-    if (request.method !== "POST") {
-      return text(405, "method not allowed");
-    }
+    // Log every arrival first. Without this an empty log is ambiguous - it
+    // cannot tell "Autotask never called us" from "we rejected the call".
+    console.log(`Request: ${request.method} ${url.pathname}`);
 
     const missing = REQUIRED_SETTINGS.filter((name) => !env[name]);
     if (missing.length > 0) {
-      console.error(`Missing configuration: ${missing.join(", ")}`);
+      console.error(
+        `Missing configuration: ${missing.join(", ")}. ` +
+          `Set these under Settings > Variables and Secrets, then redeploy.`
+      );
       return text(500, "not configured");
     }
 
-    if (!timingSafeEqual(url.searchParams.get("code") ?? "", env.WebhookToken)) {
+    const tokenOk = timingSafeEqual(
+      url.searchParams.get("code") ?? "",
+      env.WebhookToken
+    );
+
+    // A health check you can hit from a browser to prove the Worker is live
+    // and configured. Reports only whether each setting is present.
+    if (request.method === "GET" && url.pathname === "/health") {
+      if (!tokenOk) {
+        console.warn("Health check rejected: bad or missing ?code=");
+        return text(401, "unauthorized");
+      }
+      console.log("Health check OK");
+      return text(
+        200,
+        [
+          "ok",
+          `settings present: ${REQUIRED_SETTINGS.join(", ")}`,
+          `sync flag UDF: "${env.AutotaskSyncFlagUdfLabel}"`,
+          `aBILLity id UDF: "${env.AutotaskAbillityIdUdfLabel}"`,
+        ].join("\n")
+      );
+    }
+
+    if (request.method !== "POST") {
+      console.warn(`Rejected ${request.method} - only POST is accepted here.`);
+      return text(405, "method not allowed");
+    }
+
+    if (!tokenOk) {
+      console.warn(
+        `Rejected: the ?code= on the URL does not match WebhookToken. ` +
+          `Check the URL registered in Autotask against the WebhookToken secret. ` +
+          `(code was ${url.searchParams.get("code") ? "present but wrong" : "missing entirely"})`
+      );
       return text(401, "unauthorized");
     }
 
@@ -58,6 +101,11 @@ export default {
       case "/api/CompanyNameSyncDeactivated":
         return handleDeactivated(request);
       default:
+        console.warn(
+          `Rejected: nothing serves ${url.pathname}. ` +
+            `Expected /api/CompanyNameSync or /api/CompanyNameSyncDeactivated ` +
+            `(both are case-sensitive).`
+        );
         return text(404, "not found");
     }
   },
@@ -72,6 +120,11 @@ async function handleCompanyNameSync(request, env) {
   }
 
   if (payload?.EntityType !== "Company" || payload?.Action !== "Update") {
+    console.log(
+      `Ignoring payload: EntityType=${JSON.stringify(payload?.EntityType)} ` +
+        `Action=${JSON.stringify(payload?.Action)} (wanted "Company"/"Update"). ` +
+        `Top-level keys received: ${Object.keys(payload ?? {}).join(", ") || "(none)"}`
+    );
     return text(200, "ok");
   }
 
@@ -83,8 +136,15 @@ async function handleCompanyNameSync(request, env) {
   const syncFlag = fields.get(env.AutotaskSyncFlagUdfLabel);
   const abillityId = fields.get(env.AutotaskAbillityIdUdfLabel);
 
-  // This update didn't touch the name.
-  if (!newName) return text(200, "ok");
+  // This update didn't touch the name. Log the field names anyway - if the
+  // payload shape or a UDF label is wrong, this is the line that shows it.
+  if (!newName) {
+    console.log(
+      `No CompanyName for company ${payload.Id} - nothing to sync. ` +
+        `Fields received: ${[...fields.keys()].map((k) => JSON.stringify(k)).join(", ") || "(none)"}`
+    );
+    return text(200, "ok");
+  }
 
   if (!isAffirmative(syncFlag)) {
     console.log(
@@ -102,10 +162,24 @@ async function handleCompanyNameSync(request, env) {
     return text(200, "ok");
   }
 
+  // aBILLity documents the company id as an integer. A non-numeric UDF value
+  // would otherwise fail obscurely inside aBILLity.
+  if (!/^\d+$/.test(String(abillityId).trim())) {
+    console.error(
+      `Autotask company ${payload.Id} has a non-numeric ` +
+        `"${env.AutotaskAbillityIdUdfLabel}" of ${JSON.stringify(abillityId)}. ` +
+        `aBILLity company ids are whole numbers - fix the UDF value.`
+    );
+    return text(200, "ok");
+  }
+
   if (newName.length > ABILLITY_NAME_MAX_LENGTH) {
     newName = newName.slice(0, ABILLITY_NAME_MAX_LENGTH);
   }
 
+  // PATCH updates selected fields. Do NOT change this to PUT: aBILLity
+  // documents PUT as updating ALL details of a company, so a body carrying
+  // only Name would blank its flags and dates.
   const response = await fetch(
     `${ABILLITY_API_BASE}/company/${encodeURIComponent(abillityId)}`,
     {
@@ -123,8 +197,18 @@ async function handleCompanyNameSync(request, env) {
 
   if (!response.ok) {
     const detail = await response.text().catch(() => "");
+    let hint = "";
+    if (response.status === 401) {
+      hint =
+        " - aBILLity returns 401 both for bad credentials and for a user without" +
+        " company permissions, so check the permissions as well as the secrets.";
+    } else if (response.status === 404) {
+      hint = ` - no company ${abillityId} in aBILLity. Check the UDF value.`;
+    } else if (response.status === 409) {
+      hint = " - aBILLity rejected the company's flag combination.";
+    }
     console.error(
-      `aBILLity PATCH failed for company ${abillityId}: ${response.status} ${detail}`
+      `aBILLity PATCH failed for company ${abillityId}: ${response.status} ${detail}${hint}`
     );
     return text(500, "sync failed");
   }

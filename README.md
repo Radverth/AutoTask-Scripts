@@ -426,6 +426,21 @@ Once on, invocations are kept and you can search them in the **Logs** tab withou
 
 *(Cloudflare moves these around fairly often. If the menu names differ, look for **Logs** on the Worker and **Observability** in its Settings.)*
 
+### Is the Worker even live?
+
+Open this in a browser — it needs no Autotask involvement:
+
+```
+https://autotask-abillity-sync.<your-subdomain>.workers.dev/health?code=<YOUR_WEBHOOK_TOKEN>
+```
+
+- **`ok` plus a list of settings** — the Worker is deployed, configured, and your token is right. Any problem is upstream in Autotask.
+- **`unauthorized`** — the Worker is live but your `WebhookToken` doesn't match the `?code=` you used. The registered webhook URL has the same problem.
+- **`not configured`** — a variable or secret from step 2.4/2.5 is missing; the message names which.
+- **Nothing / a Cloudflare error** — the Worker isn't deployed at that hostname.
+
+It reports only *whether* each setting is present, never its value.
+
 ### What you'll see
 
 | Log line | Meaning |
@@ -435,9 +450,15 @@ Once on, invocations are kept and you can search them in the **Logs** tab withou
 | `... is flagged for sync but has no "aBillity Company ID"` | **Warning.** Someone switched this company on but left the ID blank. |
 | `aBILLity PATCH failed for company <id>: <status>` | **Error.** Reached aBILLity, which refused. Status and body are included. |
 | `Missing configuration: ...` | A variable or secret from step 2.4/2.5 isn't set. |
-| *nothing at all* | The webhook never reached the Worker — an Autotask-side problem, not a Worker one. |
+| `Request: POST /api/CompanyNameSync` | Something arrived. Every request logs this first. |
+| `Rejected: the ?code= ... does not match WebhookToken` | Autotask called, but the token in the registered URL is wrong. |
+| `Rejected: nothing serves /...` | Autotask called the wrong path — both are case-sensitive. |
+| `Ignoring payload: EntityType=... Action=...` | Arrived, but not a Company update. Shows what was actually sent. |
+| `No CompanyName ... Fields received: ...` | Arrived, but no name field. **The list of fields is what diagnoses a wrong UDF label.** |
+| `... has a non-numeric "aBillity Company ID"` | The UDF holds something that isn't a whole number. |
+| *nothing at all* | Autotask never called the Worker. Check the webhook in Autotask, not the Worker. |
 
-That last row is the useful one: no log entry means Autotask didn't call you, so check the webhook in Autotask rather than the Worker.
+That last row is now meaningful: every request logs its arrival before anything else, so an empty log genuinely means Autotask never called. Check the webhook in Autotask rather than the Worker.
 
 ## Step 6 — Test it
 
@@ -515,6 +536,8 @@ To watch it run: Function App → **CompanyNameSync** → **Monitor**.
 
 If a sync doesn't work, it helps to know which half is broken. These test aBILLity directly — no Autotask, no Cloudflare.
 
+All of it is checked against [aBILLity's published API](https://api.abillity.co.uk/GettingStarted): `PATCH api/company/{id}` updates selected details (`PUT` would replace *all* of them), `GET api/company/{id}` returns a `CompanyView` with `Name` at the top level, the id is an integer, and `Name` is capped at 50 characters.
+
 > **These write to live billing data.** Request 2 / `-NewName` genuinely renames a company in aBILLity. Use one you're willing to rename, and restore it afterwards. The read step alone is enough to check credentials and a company id.
 
 ### Postman
@@ -550,9 +573,9 @@ Omit `-Password` and it prompts, so it stays out of your shell history. If aBILL
 | Result | Meaning |
 |---|---|
 | Read works, rename works | aBILLity is fine. Any failure is on the Autotask or Worker side. |
-| `401` | aBILLity rejected the credentials — the same three values the Worker holds as secrets. |
+| `401` | Bad credentials **or** a user without company permissions — aBILLity uses 401 for both, so check the permissions too. |
 | `403` | Credentials valid, but not permitted for this company. |
-| `404` | No company with that id — so the value in the `aBillity Company ID` UDF is wrong, and the Worker would fail identically. |
+| `404` | No such company, or no companies in the database. Usually the `aBillity Company ID` UDF is wrong; the Worker fails identically. |
 | HTML instead of JSON | The request never reached the API. |
 
 ---
