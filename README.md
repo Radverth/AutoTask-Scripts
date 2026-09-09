@@ -222,6 +222,35 @@ To watch it run: Function App → **CompanyNameSync** → **Monitor**.
 
 ---
 
+# Troubleshooting the setup script
+
+**`404 - File or directory not found` at the zone lookup**
+
+This is Autotask saying "that URL doesn't exist here" before the script has done anything. It's almost always one of:
+
+| Cause | Fix |
+|---|---|
+| `$AutotaskUserName` isn't the API user | It must be the **API user's** username exactly as Autotask lists it under **Admin → Resources/Users** — usually an email address, and *not* your own Autotask login. |
+| That user isn't an API user | Its Security Level must be **API User (system)**. |
+| `$AutotaskApiIntegrationCode` is wrong | It's the tracking identifier from **Admin → Extensions & Integrations → Other Extensions & Tools → Integration Vendor API user**. |
+| The machine can't reach `*.autotask.net` | Corporate proxy or firewall. Test with `curl https://webservices2.autotask.net/atservicesrest/versioninformation`. |
+
+The script tries several host and version combinations and prints each URL as it goes, so the last few lines tell you exactly what was attempted.
+
+**One error used to become six.** Earlier versions carried on after a failure, so an empty base URL produced a cascade of `Invalid URI: The hostname could not be parsed` messages and a misleading `No Company UDF found...` at the end. The script now stops at the first real problem — if you see UDF errors now, they're genuine.
+
+**`No Company UDF found with the label ...`**
+
+The script prints every Company UDF label Autotask actually reports. Copy the two you want out of that list into the config block, character for character.
+
+Note that if this fires, the webhook has already been created. Either fix the labels and re-run just section 6, or delete the webhook in Autotask (**Admin → Extensions & Integrations → Other Extensions & Tools → Webhooks**) and run the whole script again.
+
+**Nothing syncs, but no errors anywhere**
+
+Check the company's `Sync with aBillity (yes or no)` UDF actually says yes. A blank flag is a deliberate skip, and it's logged rather than raised as an error.
+
+---
+
 # A couple of things to know
 
 - **Costs nothing at this scale** — Cloudflare's free tier (100k requests/day) and Azure's free monthly grant (1M runs) are both far more than a name-change webhook will ever use.

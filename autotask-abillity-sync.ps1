@@ -32,7 +32,44 @@ $SyncFlagUdfLabel   = "Sync with aBillity (yes or no)"
 $AffirmativeValues = @("yes", "y", "true", "1", "on", "checked")
 
 ### ---------------------------------------------------------------------
+### 0b. Stop at the first problem, and check the config is actually filled in
+###
+### Without this the script used to carry on after a failure, so one broken
+### call turned into a screenful of misleading follow-on errors.
+### ---------------------------------------------------------------------
+
+$ErrorActionPreference = "Stop"
+
+$Config = [ordered]@{
+    AutotaskApiIntegrationCode = $AutotaskApiIntegrationCode
+    AutotaskUserName           = $AutotaskUserName
+    AutotaskSecret             = $AutotaskSecret
+    AbillitySystemInformation  = $AbillitySystemInformation
+    AbillityUserName           = $AbillityUserName
+    AbillityPassword           = $AbillityPassword
+    WebhookUrl                 = $WebhookUrl
+    DeactivationUrl            = $DeactivationUrl
+    NotificationEmail          = $NotificationEmail
+    AbillityIdUdfLabel         = $AbillityIdUdfLabel
+    SyncFlagUdfLabel           = $SyncFlagUdfLabel
+}
+
+$Unfilled = $Config.GetEnumerator() | Where-Object {
+    [string]::IsNullOrWhiteSpace($_.Value) -or
+    $_.Value -match '^<.*>$' -or
+    $_.Value -like "*yourhost.example.com*" -or
+    $_.Value -like "*yourdomain.com*"
+} | ForEach-Object { $_.Key }
+
+if ($Unfilled) {
+    throw "Fill in the CONFIG block at the top of this script first. Still on placeholder values: $($Unfilled -join ', ')"
+}
+
+### ---------------------------------------------------------------------
 ### 1. Resolve your Autotask zone / base URL (only needs doing once)
+###
+### Autotask splits customers across numbered zones, so before anything else
+### we ask it which server your account lives on.
 ### ---------------------------------------------------------------------
 
 $AutotaskAuthHeaders = @{
@@ -42,11 +79,88 @@ $AutotaskAuthHeaders = @{
     "Content-Type"       = "application/json"
 }
 
-$Version = (Invoke-RestMethod -Uri "https://webservices2.autotask.net/atservicesrest/versioninformation").apiversions | Select-Object -Last 1
-$ZoneInfo = Invoke-RestMethod -Uri "https://webservices2.autotask.net/atservicesrest/$Version/zoneInformation?user=$AutotaskUserName"
-$AutotaskBaseUri = $ZoneInfo.url.TrimEnd('/')   # e.g. https://webservices14.autotask.net/atservicesrest
+$AutotaskHosts = @("webservices2.autotask.net", "webservices.autotask.net")
 
+function Get-AutotaskBaseUri {
+    param([Parameter(Mandatory = $true)][string] $UserName)
+
+    # The username goes in a query string, so it has to be encoded - an
+    # unencoded '@' or space is enough to turn this into a 404.
+    $EncodedUser = [uri]::EscapeDataString($UserName)
+
+    # Ask which API versions exist. If that endpoint is unavailable or answers
+    # in an unexpected shape we fall back to the known-good V1.0, rather than
+    # interpolating an empty version and requesting '/atservicesrest//zone...'
+    # - which is exactly what produces a bare IIS 404.
+    $DiscoveredVersion = $null
+    foreach ($ApiHost in $AutotaskHosts) {
+        try {
+            $Info = Invoke-RestMethod -Uri "https://$ApiHost/atservicesrest/versioninformation" -Method Get -TimeoutSec 30
+            $DiscoveredVersion = @($Info.apiVersions | Where-Object { $_ }) | Select-Object -Last 1
+            if ($DiscoveredVersion) { break }
+        } catch {
+            # Try the next host.
+        }
+    }
+
+    if ($DiscoveredVersion) {
+        Write-Host "Autotask reports API version $DiscoveredVersion"
+    } else {
+        Write-Host "Could not read the API version list - falling back to V1.0"
+    }
+
+    $Versions = @($DiscoveredVersion, "V1.0") | Where-Object { $_ } | Select-Object -Unique
+
+    $Candidates = @()
+    foreach ($ApiHost in $AutotaskHosts) {
+        foreach ($ApiVersion in $Versions) {
+            $Candidates += "https://$ApiHost/atservicesrest/$ApiVersion/zoneInformation?user=$EncodedUser"
+        }
+    }
+    $Candidates = $Candidates | Select-Object -Unique
+
+    foreach ($Uri in $Candidates) {
+        Write-Host "Looking up your zone: $Uri"
+        try {
+            $Zone = Invoke-RestMethod -Uri $Uri -Method Get -TimeoutSec 30
+        } catch {
+            Write-Host "  -> $($_.Exception.Message)"
+            continue
+        }
+        if ($Zone.url) { return ([string]$Zone.url).TrimEnd('/') }
+        Write-Host "  -> answered, but with no zone URL in the response"
+    }
+
+    throw @"
+Could not work out your Autotask zone. Tried:
+  $($Candidates -join "`n  ")
+
+Check each of these:
+  * `$AutotaskUserName must be the API user's username exactly as Autotask
+    shows it (Admin > Resources/Users). It is usually an email address, and it
+    is NOT your own Autotask login.
+  * That user's Security Level must be 'API User (system)'.
+  * `$AutotaskApiIntegrationCode must be the tracking identifier from
+    Admin > Extensions & Integrations > Other Extensions & Tools > Integration
+    Vendor API user.
+  * This machine must be able to reach *.autotask.net (proxy or firewall?).
+"@
+}
+
+$AutotaskBaseUri = Get-AutotaskBaseUri -UserName $AutotaskUserName
 Write-Host "Autotask base URI: $AutotaskBaseUri"
+
+### ---------------------------------------------------------------------
+### 1b. Prove the credentials work before we start creating things
+### ---------------------------------------------------------------------
+
+try {
+    $null = Invoke-RestMethod -Uri "$AutotaskBaseUri/V1.0/CompanyWebhooks/entityInformation" `
+        -Method Get -Headers $AutotaskAuthHeaders -TimeoutSec 30
+    Write-Host "Autotask credentials accepted."
+} catch {
+    throw "Autotask rejected the credentials: $($_.Exception.Message). Check AutotaskApiIntegrationCode, AutotaskUserName and AutotaskSecret."
+}
 
 ### ---------------------------------------------------------------------
 ### 2. Create the webhook
@@ -67,6 +181,7 @@ $WebhookResult = Invoke-RestMethod -Uri "$AutotaskBaseUri/v1.0/CompanyWebhooks" 
     -Method Post -Headers $AutotaskAuthHeaders -Body $WebhookBody
 
 $WebhookId = $WebhookResult.itemId
+if (-not $WebhookId) { throw "Autotask accepted the webhook but returned no ID. Response: $($WebhookResult | ConvertTo-Json -Depth 5)" }
 Write-Host "Created webhook, WebhookID = $WebhookId"
 
 ### ---------------------------------------------------------------------
@@ -80,6 +195,8 @@ $CompanyNameField = $CompanyFields.fields |
     Where-Object { $_.name -eq "fieldID" } |
     Select-Object -ExpandProperty picklistValues |
     Where-Object { $_.label -eq "CompanyName" }
+
+if (-not $CompanyNameField) { throw "Autotask did not report a 'CompanyName' webhook field. Cannot continue." }
 
 $CompanyNameFieldId = [int]$CompanyNameField.value
 Write-Host "CompanyName fieldID = $CompanyNameFieldId"
@@ -116,12 +233,14 @@ $UdfPicklist = $UdfFields.fields |
 ### ride along in the payload so the receiver can read them.
 ### ---------------------------------------------------------------------
 
+$MissingLabels = @()
+
 foreach ($Label in @($AbillityIdUdfLabel, $SyncFlagUdfLabel)) {
 
     $UdfMatch = $UdfPicklist | Where-Object { $_.label -eq $Label }
 
     if (-not $UdfMatch) {
-        Write-Error "No Company UDF found with the label '$Label' - check the spelling in Autotask (Admin > Features & Settings > Companies & Contacts > Company User-Defined Fields)."
+        $MissingLabels += $Label
         continue
     }
 
@@ -137,6 +256,20 @@ foreach ($Label in @($AbillityIdUdfLabel, $SyncFlagUdfLabel)) {
 
     Invoke-RestMethod -Uri "$AutotaskBaseUri/v1.0/CompanyWebhooks/$WebhookId/UdfFields" `
         -Method Post -Headers $AutotaskAuthHeaders -Body $UdfTriggerBody
+}
+
+if ($MissingLabels) {
+    throw @"
+These UDF labels do not exist on Company in Autotask:
+  $($MissingLabels -join "`n  ")
+
+The Company UDFs Autotask actually reports are:
+  $((@($UdfPicklist.label) | Sort-Object) -join "`n  ")
+
+Copy the labels from that list into the CONFIG block exactly - capitals and
+spacing included. Webhook $WebhookId has been created; either fix the labels
+and re-run step 6, or delete the webhook in Autotask and run this again.
+"@
 }
 
 Write-Host "Setup complete. Check Admin > Extensions & Integrations > Other Extensions & Tools > Webhooks in Autotask to confirm status."
