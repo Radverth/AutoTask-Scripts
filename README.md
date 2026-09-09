@@ -239,6 +239,26 @@ The script tries several host and version combinations and prints each URL as it
 
 **One error used to become six.** Earlier versions carried on after a failure, so an empty base URL produced a cascade of `Invalid URI: The hostname could not be parsed` messages and a misleading `No Company UDF found...` at the end. The script now stops at the first real problem — if you see UDF errors now, they're genuine.
 
+**`Autotask rejected the credentials`**
+
+The script makes two test calls before it creates anything, and prints the HTTP status and Autotask's own response body for whichever one failed. The status tells you which problem you have:
+
+| Status | Meaning | Fix |
+|---|---|---|
+| **401** | The credentials themselves are wrong. | Check all three below. |
+| **403** | The credentials are *valid*, but this API user isn't allowed to do that. | A permissions problem, not a password problem — see below. |
+
+For a 401, check all three in the API user's own record (**Admin → Resources/Users →** find the API user **→ Edit**):
+
+- `$AutotaskUserName` — the API user's Username exactly as Autotask shows it. Usually an email address, and **not** your own Autotask login.
+- `$AutotaskSecret` — that API user's generated Password/Secret. Not a person's password, and not the integration code.
+- `$AutotaskApiIntegrationCode` — the Tracking Identifier from **Admin → Extensions & Integrations → Other Extensions & Tools → Integration Vendor API user**.
+- The API user's Security Level must be **API User (system)**.
+
+If you've just created or reset the API user, wait a minute and retry — new credentials aren't always live immediately.
+
+For a 403, the credentials are fine but the Security Level lacks access to the entity named in the error. Webhook permissions in particular aren't granted to every API user by default. Check the Security Level under **Admin → Resources/Users**, or ask whoever administers your Autotask instance.
+
 **`No Company UDF found with the label ...`**
 
 The script prints every Company UDF label Autotask actually reports. Copy the two you want out of that list into the config block, character for character.

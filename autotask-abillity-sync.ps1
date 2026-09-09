@@ -152,15 +152,119 @@ Write-Host "Autotask base URI: $AutotaskBaseUri"
 
 ### ---------------------------------------------------------------------
 ### 1b. Prove the credentials work before we start creating things
+###
+### Two probes, because they fail for different reasons: Companies tests the
+### credentials themselves, CompanyWebhooks tests whether this API user is
+### allowed to manage webhooks. A 401 on the first is a bad credential; a 403
+### on the second is a good credential without enough permission.
 ### ---------------------------------------------------------------------
 
-try {
-    $null = Invoke-RestMethod -Uri "$AutotaskBaseUri/V1.0/CompanyWebhooks/entityInformation" `
-        -Method Get -Headers $AutotaskAuthHeaders -TimeoutSec 30
-    Write-Host "Autotask credentials accepted."
-} catch {
-    throw "Autotask rejected the credentials: $($_.Exception.Message). Check AutotaskApiIntegrationCode, AutotaskUserName and AutotaskSecret."
+function Get-AutotaskErrorDetail {
+    param($ErrorRecord)
+
+    $StatusCode = $null
+    try { $StatusCode = [int]$ErrorRecord.Exception.Response.StatusCode } catch { }
+
+    # Autotask puts the useful part in the response body, which PowerShell
+    # hides in different places depending on version.
+    $Body = $null
+    if ($ErrorRecord.ErrorDetails -and $ErrorRecord.ErrorDetails.Message) {
+        $Body = $ErrorRecord.ErrorDetails.Message
+    } else {
+        try { $Body = $ErrorRecord.Exception.Response.Content.ReadAsStringAsync().Result } catch { }
+    }
+
+    $Parts = @()
+    if ($StatusCode) { $Parts += "HTTP $StatusCode" }
+    if ($ErrorRecord.Exception.Message) { $Parts += $ErrorRecord.Exception.Message }
+    if ($Body) { $Parts += "Response body: $Body" }
+
+    return [pscustomobject]@{
+        StatusCode = $StatusCode
+        Detail     = ($Parts -join " | ")
+    }
 }
+
+$CredentialAdvice = @"
+Check all three, in the API user's own record in Autotask
+(Admin > Resources/Users > find the API user > Edit):
+
+  * AutotaskUserName is the API user's Username exactly as Autotask shows it.
+    It is usually an email address, and it is NOT your own Autotask login.
+  * AutotaskSecret is that API user's generated Password/Secret - not a
+    person's password, and not the integration code.
+  * AutotaskApiIntegrationCode is the Tracking Identifier from
+    Admin > Extensions & Integrations > Other Extensions & Tools >
+    Integration Vendor API user.
+  * The API user's Security Level must be 'API User (system)'.
+
+If you have just created or reset the API user, give Autotask a minute and
+try again - new credentials are not always live immediately.
+"@
+
+$Probes = [ordered]@{
+    "Companies (are the credentials valid?)"       = "$AutotaskBaseUri/V1.0/Companies/entityInformation"
+    "CompanyWebhooks (may this user use webhooks?)" = "$AutotaskBaseUri/V1.0/CompanyWebhooks/entityInformation"
+}
+
+foreach ($Probe in $Probes.GetEnumerator()) {
+
+    Write-Host "Checking $($Probe.Key)"
+
+    $Failure = $null
+    try {
+        $null = Invoke-RestMethod -Uri $Probe.Value -Method Get -Headers $AutotaskAuthHeaders -TimeoutSec 30
+    } catch {
+        $Failure = Get-AutotaskErrorDetail $_
+    }
+
+    if (-not $Failure) {
+        Write-Host "  -> OK"
+        continue
+    }
+
+    Write-Host "  -> FAILED: $($Failure.Detail)"
+
+    switch ($Failure.StatusCode) {
+
+        401 {
+            throw @"
+Autotask rejected the credentials (HTTP 401 Unauthorized).
+
+$($Failure.Detail)
+
+$CredentialAdvice
+"@
+        }
+
+        403 {
+            throw @"
+Autotask accepted the credentials but refused the request (HTTP 403 Forbidden)
+on: $($Probe.Value)
+
+$($Failure.Detail)
+
+The credentials are valid, so this is a permissions problem rather than a
+password problem. The API user's Security Level needs access to the entity
+above - for CompanyWebhooks that means webhook permissions, which are not
+granted to every API user by default. Check the Security Level under
+Admin > Resources/Users, or ask whoever administers your Autotask instance.
+"@
+        }
+
+        default {
+            throw @"
+Autotask would not answer a test request on: $($Probe.Value)
+
+$($Failure.Detail)
+
+$CredentialAdvice
+"@
+        }
+    }
+}
+
+Write-Host "Autotask credentials accepted."
 
 ### ---------------------------------------------------------------------
 ### 2. Create the webhook
