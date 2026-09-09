@@ -331,6 +331,21 @@ Body → **raw** → **JSON**:
 
 → Nothing to capture.
 
+#### Testing the sync end to end
+
+A folder of requests that renames a company in Autotask to fire the webhook, so you can test without clicking through the Autotask UI.
+
+> **T3 and T4 write to live data in two systems.** The rename lands in Autotask and, if the sync works, in aBILLity too. Use a company you're willing to rename, and let T4 put it back.
+
+| # | Request | Does |
+|---|---|---|
+| T1 | Find a company by name | Searches on `testCompanySearch`, lists matches with ids. Read-only. |
+| T2 | Check the company is set up | **Read-only, and the one to run first.** Prints both UDF values and fails its tests if the sync flag isn't yes or the aBILLity id is blank. Captures the current name. |
+| T3 | Rename the company | Fires the sync. Start the Worker log stream before running it. |
+| T4 | Restore the original name | Fires the sync again, restoring both names. |
+
+T2 earns its place: a company that isn't flagged is skipped *by design*, and without checking first that looks identical to a broken sync.
+
 #### Utilities
 
 Maintenance calls — same four headers. Not part of the 0→7 run.

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Autotask -> aBILLity Company Name Sync",
-    "description": "Registers the Autotask webhook that drives the company name sync, as an alternative to running autotask-abillity-sync.ps1.\n\nSETUP\n  Open the collection's Variables tab and fill in userName, apiIntegrationCode, secret, webhookUrl, deactivationUrl, notificationEmail, and your two UDF labels.\n  Leave baseUrl and everything ending in Id blank - the requests fill those in as they run.\n\nORDER\n  Run requests 0 to 7 in order, top to bottom. Each one stores what the next needs.\n  Request 0 sends no credentials and is always safe to run.\n  Request 2 creates the webhook - run it only once.\n\nWATCH THE CONSOLE\n  Open Postman's console (View > Show Postman Console) before running. The test scripts log what they captured, and request 5 lists every Company UDF label Autotask reports if yours do not match.\n\nA NOTE ON LOCKOUTS\n  A 401 means either wrong credentials or a locked account - they are indistinguishable. Repeated failures lock the account, so do not retry request 1 over and over. Fix the values, or get the account unlocked, then try once.",
+    "description": "Registers the Autotask webhook that drives the company name sync, as an alternative to running autotask-abillity-sync.ps1.\n\nSETUP\n  Open the collection's Variables tab and fill in userName, apiIntegrationCode, secret, webhookUrl, deactivationUrl, notificationEmail, and your two UDF labels.\n  Leave baseUrl and everything ending in Id blank - the requests fill those in as they run.\n\nORDER\n  Run requests 0 to 7 in order, top to bottom. Each one stores what the next needs.\n  Request 0 sends no credentials and is always safe to run.\n  Request 2 creates the webhook - run it only once.\n\nWATCH THE CONSOLE\n  Open Postman's console (View > Show Postman Console) before running. The test scripts log what they captured, and request 5 lists every Company UDF label Autotask reports if yours do not match.\n\nA NOTE ON LOCKOUTS\n  A 401 means either wrong credentials or a locked account - they are indistinguishable. Repeated failures lock the account, so do not retry request 1 over and over. Fix the values, or get the account unlocked, then try once.\n\nTESTING THE SYNC\n  The 'Test the sync' folder renames a company in Autotask to fire the webhook end to end. T2 is read-only and checks the two UDFs are set. T3 and T4 write to live data in Autotask and, through the sync, in aBILLity.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -427,6 +427,245 @@
       ]
     },
     {
+      "name": "Test the sync (WRITES LIVE DATA)",
+      "description": "End-to-end test: rename a company in Autotask and watch it reach aBILLity.\n\nT1 finds a company, T2 checks its two UDFs are set (read-only, and the most useful one - a company that is not flagged will be skipped by design), T3 renames it and fires the sync, T4 puts the name back.\n\nT3 and T4 write to Autotask AND, through the sync, to aBILLity.",
+      "item": [
+        {
+          "name": "T1. Find a company by name",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/Companies/query?search={\"filter\":[{\"op\":\"contains\",\"field\":\"companyName\",\"value\":\"{{testCompanySearch}}\"}]}"
+            },
+            "description": "Finds companies whose name contains {{testCompanySearch}}, so you can pick one to test with and copy its id into {{testCompanyId}}.\n\nRead-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const items = (pm.response.json().items) || [];",
+                  "console.log(items.length + ' match(es):');",
+                  "items.slice(0, 25).forEach(c => console.log('  id ' + c.id + '  ' + c.companyName));",
+                  "if (items.length === 1) {",
+                  "    pm.collectionVariables.set('testCompanyId', items[0].id);",
+                  "    console.log('One match - testCompanyId set to ' + items[0].id);",
+                  "}",
+                  "pm.test('Search returned something', function () { pm.expect(items.length).to.be.above(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "T2. Check the company is set up (read-only)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/Companies/{{testCompanyId}}"
+            },
+            "description": "Shows the company's current name and, crucially, the values of your two UDFs.\n\nRun this BEFORE renaming. If the sync flag is not yes or the aBILLity id is blank, the Worker will correctly skip the rename and you will think the sync is broken when it is doing exactly what it should.\n\nRead-only. Captures the current name into {{originalCompanyName}} so T4 can restore it."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "const c = j.item || (j.items && j.items[0]) || j;",
+                  "",
+                  "const idLabel = pm.collectionVariables.get('abillityIdUdfLabel');",
+                  "const flagLabel = pm.collectionVariables.get('syncFlagUdfLabel');",
+                  "const udfs = c.userDefinedFields || [];",
+                  "const find = (label) => (udfs.find(u => u.name === label) || {}).value;",
+                  "",
+                  "console.log('--- company ' + c.id + ' ---');",
+                  "console.log('name : ' + c.companyName);",
+                  "console.log(JSON.stringify(flagLabel) + ' = ' + JSON.stringify(find(flagLabel)));",
+                  "console.log(JSON.stringify(idLabel) + ' = ' + JSON.stringify(find(idLabel)));",
+                  "",
+                  "if (udfs.length) {",
+                  "    console.log('all UDFs on this company:');",
+                  "    udfs.forEach(u => console.log('  ' + JSON.stringify(u.name) + ' = ' + JSON.stringify(u.value)));",
+                  "}",
+                  "",
+                  "if (c.companyName) {",
+                  "    pm.collectionVariables.set('originalCompanyName', c.companyName);",
+                  "    console.log('Original name stored - T4 restores it.');",
+                  "}",
+                  "",
+                  "const flag = String(find(flagLabel) || '').trim().toLowerCase();",
+                  "const syncOn = ['yes','y','true','1','on','checked'].indexOf(flag) !== -1;",
+                  "const hasId = !!find(idLabel);",
+                  "",
+                  "if (!syncOn) { console.log('WARNING: sync flag is not yes - the Worker will skip this company.'); }",
+                  "if (!hasId)  { console.log('WARNING: no aBILLity id - the Worker will skip this company.'); }",
+                  "if (syncOn && hasId) { console.log('Set up correctly - renaming this company should sync.'); }",
+                  "",
+                  "pm.test('Company found', function () { pm.response.to.have.status(200); });",
+                  "pm.test('Flagged for sync', function () { pm.expect(syncOn, 'sync flag is not yes').to.be.true; });",
+                  "pm.test('Has an aBILLity id', function () { pm.expect(hasId, 'aBILLity id is blank').to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "T3. Rename the company (FIRES THE SYNC)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/Companies"
+            },
+            "description": "Renames the company in Autotask, which is what fires the webhook.\n\n*** THIS WRITES TO LIVE DATA IN TWO SYSTEMS. *** The rename lands in Autotask, and if the sync works it renames the matching company in aBILLity too.\n\nRun T2 first so the original name is captured, then T4 to put it back - T4 fires the sync again and restores the aBILLity name as well.\n\nStart the Worker's log stream before running this.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{testCompanyId}}\",\n  \"companyName\": \"{{testCompanyName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rename accepted', function () { pm.response.to.have.status(200); });",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('Renamed to ' + JSON.stringify(pm.collectionVariables.get('testCompanyName')));",
+                  "    console.log('Now watch the Worker log. Within a minute or so expect:');",
+                  "    console.log('  Request: POST /api/CompanyNameSync');",
+                  "    console.log('  Synced company <abillity id> -> ...');",
+                  "    console.log('Nothing at all means Autotask did not call the Worker.');",
+                  "    console.log('Then run T4 to restore ' + JSON.stringify(pm.collectionVariables.get('originalCompanyName')));",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "T4. Restore the original name",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/Companies"
+            },
+            "description": "Puts the Autotask name back to whatever T2 captured, which fires the sync again and restores the aBILLity name too.\n\nIf {{originalCompanyName}} is empty, T2 did not capture it - set the name by hand rather than running this.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"id\": \"{{testCompanyId}}\",\n  \"companyName\": \"{{originalCompanyName}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const original = pm.collectionVariables.get('originalCompanyName');",
+                  "if (!original) {",
+                  "    console.log('WARNING: {{originalCompanyName}} is empty - this just sent a blank name.');",
+                  "    console.log('Fix the company name by hand in Autotask.');",
+                  "}",
+                  "if (pm.response.code === 200) {",
+                  "    console.log('Restored to ' + JSON.stringify(original));",
+                  "} else {",
+                  "    console.log('RESTORE FAILED (' + pm.response.code + '). The company is still renamed.');",
+                  "}",
+                  "pm.test('Restored', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
       "name": "Utilities",
       "item": [
         {
@@ -691,6 +930,26 @@
     },
     {
       "key": "syncFlagUdfFieldId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testCompanySearch",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testCompanyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testCompanyName",
+      "value": "Sync Test - safe to rename back",
+      "type": "string"
+    },
+    {
+      "key": "originalCompanyName",
       "value": "",
       "type": "string"
     }
