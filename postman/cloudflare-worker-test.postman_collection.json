@@ -1,0 +1,234 @@
+{
+  "info": {
+    "name": "Cloudflare Worker - health and webhook simulation",
+    "description": "Tests the Worker directly. Requests 1, 2, 3 and 5 involve no Autotask and write nothing anywhere, so they work even while the Autotask side is blocked.\n\nSETUP\n  workerBaseUrl        https://autotask-abillity-sync.<your-subdomain>.workers.dev\n                       (no trailing slash)\n  webhookToken         the WebhookToken secret you set on the Worker\n  syncFlagUdfLabel     must match the Worker's AutotaskSyncFlagUdfLabel exactly\n  abillityIdUdfLabel   must match the Worker's AutotaskAbillityIdUdfLabel exactly\n  testAutotaskCompanyId  any number - only appears in log lines\n  testAbillityCompanyId  a real aBILLity company id, used by request 4\n  testNewName          the name request 4 will set\n\nORDER\n  1 health check          - is the Worker live and configured?\n  2 wrong token           - does it reject properly? (401 is the pass)\n  3 simulate, not flagged - safe, writes nothing\n  4 simulate, flagged     - WRITES TO aBILLity\n  5 deactivation callback - logs only\n\nOpen the Worker's log stream first (Cloudflare > your Worker > Logs > Begin log\nstream). These requests are only half the story - the log is the other half.\n\nIMPORTANT: requests 3 and 4 send the payload shape the Worker expects. Passing them\nproves the Worker and aBILLity work together. It does NOT prove Autotask sends that\nshape - only a real webhook does that, and the Worker logs what actually arrives.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Health check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{workerBaseUrl}}/health?code={{webhookToken}}"
+        },
+        "description": "Proves the Worker is deployed, configured and that your token matches. Involves no Autotask and no aBILLity.\n\nReports only WHETHER each setting is present, never its value.\n\nRun this before anything else - if it fails, nothing downstream can work."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.text();",
+              "console.log('HTTP ' + pm.response.code);",
+              "console.log(body);",
+              "",
+              "if (pm.response.code === 200) {",
+              "    console.log('');",
+              "    console.log('Worker is live and configured. Check the two UDF labels above match');",
+              "    console.log('Autotask exactly - capitals and spacing included.');",
+              "} else if (pm.response.code === 401) {",
+              "    console.log('Token mismatch: {{webhookToken}} is not the WebhookToken secret.');",
+              "    console.log('The URL registered in Autotask will have the same problem.');",
+              "} else if (pm.response.code === 500) {",
+              "    console.log('A variable or secret is missing - the body above names which.');",
+              "} else if (pm.response.code === 404) {",
+              "    console.log('404 - the deployed Worker predates /health. Redeploy src/index.js.');",
+              "}",
+              "",
+              "pm.test('Worker healthy', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Health check with a wrong token (expect 401)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{workerBaseUrl}}/health?code=deliberately-wrong"
+        },
+        "description": "Confirms the Worker actually rejects a bad token - that the auth check works rather than letting everything through.\n\nA 401 here is the PASS."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "console.log('HTTP ' + pm.response.code + ' (401 is correct here)');",
+              "pm.test('Bad token is rejected', function () { pm.response.to.have.status(401); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Simulate a webhook - NOT flagged for sync (safe)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}"
+        },
+        "description": "Sends a webhook-shaped payload with the sync flag set to No.\n\nSafe: the Worker should skip it, so NOTHING is written to aBILLity. It still exercises routing, the token check, JSON parsing and the flag logic.\n\nRun this before request 4.\n\nExpect 200, and in the Worker log:\n  Request: POST /api/CompanyNameSync\n  ... is not flagged for aBILLity sync ... - skipping",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"EntityType\": \"Company\",\n  \"Action\": \"Update\",\n  \"Id\": \"{{testAutotaskCompanyId}}\",\n  \"Fields\": [\n    {\n      \"name\": \"CompanyName\",\n      \"value\": \"{{testNewName}}\"\n    },\n    {\n      \"name\": \"{{syncFlagUdfLabel}}\",\n      \"value\": \"No\"\n    },\n    {\n      \"name\": \"{{abillityIdUdfLabel}}\",\n      \"value\": \"{{testAbillityCompanyId}}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "console.log('HTTP ' + pm.response.code + ' - ' + pm.response.text());",
+              "console.log('Worker log should show: \"is not flagged for aBILLity sync ... skipping\"');",
+              "console.log('Nothing should have changed in aBILLity.');",
+              "pm.test('Accepted and skipped', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Simulate a webhook - flagged, real sync (WRITES TO aBILLITY)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}"
+        },
+        "description": "The same payload with the flag set to Yes, so the Worker performs the real aBILLity rename.\n\n*** THIS RENAMES A COMPANY IN aBILLity - LIVE BILLING DATA. ***\n\nSet testAbillityCompanyId to a company you are willing to rename, and put the name back afterwards with the aBILLity collection.\n\nExpect 200 and 'Synced company ... ->' in the Worker log.\nA 500 with 'sync failed' means the Worker reached aBILLity and aBILLity refused - the log carries the status and body.\n\nNOTE: this proves the Worker and aBILLity work together. It does NOT prove Autotask sends this payload shape - only a real webhook shows that.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"EntityType\": \"Company\",\n  \"Action\": \"Update\",\n  \"Id\": \"{{testAutotaskCompanyId}}\",\n  \"Fields\": [\n    {\n      \"name\": \"CompanyName\",\n      \"value\": \"{{testNewName}}\"\n    },\n    {\n      \"name\": \"{{syncFlagUdfLabel}}\",\n      \"value\": \"Yes\"\n    },\n    {\n      \"name\": \"{{abillityIdUdfLabel}}\",\n      \"value\": \"{{testAbillityCompanyId}}\"\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "console.log('HTTP ' + pm.response.code + ' - ' + pm.response.text());",
+              "",
+              "if (pm.response.code === 200) {",
+              "    console.log('Accepted. The Worker log says whether aBILLity actually took it:');",
+              "    console.log('  \"Synced company <id> -> ...\"  = renamed');",
+              "    console.log('  \"is flagged for sync but has no ...\" = the id was blank');",
+              "    console.log('Confirm with request 1 of the aBILLity collection - check LastUpdated.');",
+              "} else if (pm.response.code === 500) {",
+              "    console.log('The Worker reached aBILLity and aBILLity refused.');",
+              "    console.log('The Worker log has the status and response body.');",
+              "} else if (pm.response.code === 401) {",
+              "    console.log('Token mismatch - see request 1.');",
+              "}",
+              "",
+              "pm.test('Worker accepted the webhook', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Simulate the deactivation callback",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{workerBaseUrl}}/api/CompanyNameSyncDeactivated?code={{webhookToken}}"
+        },
+        "description": "The endpoint Autotask calls if it ever deactivates the webhook. It only logs.\n\nWrites nothing anywhere. Expect 200 and 'Autotask webhook deactivated: ...' in the log.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reason\": \"manual test from Postman\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "console.log('HTTP ' + pm.response.code + ' - ' + pm.response.text());",
+              "pm.test('Deactivation endpoint responds', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "workerBaseUrl",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "webhookToken",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "syncFlagUdfLabel",
+      "value": "Sync with aBillity (yes or no)",
+      "type": "string"
+    },
+    {
+      "key": "abillityIdUdfLabel",
+      "value": "aBillity Company ID",
+      "type": "string"
+    },
+    {
+      "key": "testAutotaskCompanyId",
+      "value": "12345",
+      "type": "string"
+    },
+    {
+      "key": "testAbillityCompanyId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "testNewName",
+      "value": "Worker Test - safe to rename back",
+      "type": "string"
+    }
+  ]
+}

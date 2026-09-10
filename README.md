@@ -25,6 +25,7 @@ So a name change syncs only when the flag says yes **and** an aBILLity ID is pre
 - **`test-autotask-credentials.ps1`** — checks your Autotask zone and credentials without running the full setup, and without spending failed login attempts you didn't mean to spend.
 - **`postman/autotask-abillity-sync.postman_collection.json`** — the same webhook setup as an importable Postman collection, if you'd rather click than run PowerShell.
 - **`postman/autotask-company-update.postman_collection.json`** — standalone: read and rename an Autotask company through the API. Renaming one is what fires the sync, so this is how you test end to end without clicking through the Autotask UI.
+- **`postman/cloudflare-worker-test.postman_collection.json`** — health-check the Worker and fire simulated webhooks at it, with no Autotask involved.
 - **`test-abillity.ps1`** and **`postman/abillity-test.postman_collection.json`** — test the aBILLity side on its own: credentials, company id, and the rename the Worker performs.
 - **`cloudflare-worker/`** — the Cloudflare Worker (JavaScript):
   - `src/index.js` — one Worker serving both endpoints. This is the file you paste into the dashboard.
@@ -429,7 +430,21 @@ Once on, invocations are kept and you can search them in the **Logs** tab withou
 
 ### Is the Worker even live?
 
-Open this in a browser — it needs no Autotask involvement:
+Import [`postman/cloudflare-worker-test.postman_collection.json`](postman/cloudflare-worker-test.postman_collection.json) — it health-checks the Worker and can fire simulated webhooks at it, so you can test the Worker and aBILLity together while the Autotask side is still being sorted out.
+
+| # | Request | Writes anything? |
+|---|---|---|
+| 1 | Health check | No |
+| 2 | Health check, wrong token — **401 is the pass** | No |
+| 3 | Simulate a webhook, *not* flagged for sync | No — the Worker skips it by design |
+| 4 | Simulate a webhook, flagged | **Yes — renames a company in aBILLity** |
+| 5 | Simulate the deactivation callback | No |
+
+Request 3 is the useful one: it exercises routing, the token check, JSON parsing and the flag logic without touching anything.
+
+> Requests 3 and 4 send the payload shape the Worker *expects*. Passing them proves the Worker and aBILLity work together — it does **not** prove Autotask sends that shape. Only a real webhook shows that, and the Worker logs whatever actually arrives.
+
+Or just open this in a browser — it needs no Autotask involvement:
 
 ```
 https://autotask-abillity-sync.<your-subdomain>.workers.dev/health?code=<YOUR_WEBHOOK_TOKEN>
