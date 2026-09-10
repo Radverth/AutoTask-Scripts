@@ -576,7 +576,9 @@ Omit `-Password` and it prompts, so it stays out of your shell history. If aBILL
 
 A 500 isn't in aBILLity's documented errors (401, 404, 409) — it means the API threw rather than rejected you. Run request 0 first to see whether auth works at all, then check in this order:
 
-1. **`SystemInformation` is wrong.** This is the most likely cause. It selects *which system* the API connects to, so a wrong or missing value can fail deep inside the API rather than come back as a clean 401. Confirm the exact value with whoever administers your aBILLity instance.
+1. **`SystemInformation` is wrong.** This is the most likely cause. It selects *which system* the API connects to, so a wrong or missing value can fail deep inside the API rather than come back as a clean 401.
+
+   In particular, **`SYSTEM` is a placeholder, not a value.** aBILLity's code samples use `SYSTEM`, `USERNAME` and `PASSWORD` together as all-caps stand-ins to be replaced — sending `SYSTEM` literally is as wrong as sending `USERNAME` as your username. The real value is issued with your API credentials; get it from whoever administers your aBILLity instance, or Union Street support.
 2. **Header names.** `SystemInformation`, `username`, `password` — check for typos and trailing spaces. Postman keeps disabled/duplicate headers around; look at the actual sent headers under the response's **Headers** tab.
 3. **Postman's Authorization tab set to anything but "No Auth"** adds a competing `Authorization` header.
 4. **`Content-Type` on a bodyless GET.** Request 0 deliberately omits it; some ASP.NET stacks object.
