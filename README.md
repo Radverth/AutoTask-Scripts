@@ -547,6 +547,7 @@ Import [`postman/abillity-test.postman_collection.json`](postman/abillity-test.p
 
 | # | Request | Does |
 |---|---|---|
+| 0 | Check credentials (`GET /site`) | **Read-only.** The endpoint aBILLity's own examples use. Run it first when anything fails — it separates bad credentials from a bad request. |
 | 1 | Get company — check its name | **Read-only.** Prints `Name`, `LastUpdated`, the flags and dates from `CompanyView`, and stores the name in `originalName`. Run it alone any time you just want to see what aBILLity holds. |
 | 2 | Rename company | **Writes.** The exact PATCH the Worker makes. |
 | 3 | Restore original name | Puts back what request 1 captured. |
@@ -570,6 +571,19 @@ Test the rename (asks for a typed `RENAME`, then offers to restore):
 ```
 
 Omit `-Password` and it prompts, so it stays out of your shell history. If aBILLity has no GET for a single company, add `-SkipRead`.
+
+### Getting a 500 from aBILLity?
+
+A 500 isn't in aBILLity's documented errors (401, 404, 409) — it means the API threw rather than rejected you. Run request 0 first to see whether auth works at all, then check in this order:
+
+1. **`SystemInformation` is wrong.** This is the most likely cause. It selects *which system* the API connects to, so a wrong or missing value can fail deep inside the API rather than come back as a clean 401. Confirm the exact value with whoever administers your aBILLity instance.
+2. **Header names.** `SystemInformation`, `username`, `password` — check for typos and trailing spaces. Postman keeps disabled/duplicate headers around; look at the actual sent headers under the response's **Headers** tab.
+3. **Postman's Authorization tab set to anything but "No Auth"** adds a competing `Authorization` header.
+4. **`Content-Type` on a bodyless GET.** Request 0 deliberately omits it; some ASP.NET stacks object.
+
+If the body comes back as HTML, read it — ASP.NET error pages often name the underlying fault.
+
+**On the `api_key` in the docs:** the C# sample declares `var urlParameters = "?api_key=123";` and then never uses it — it's boilerplate from Microsoft's "Call a Web API From a .NET Client" tutorial. aBILLity documents only two authentication methods: the header credentials used here, and a token from `POST /api/Authenticate`. There's no API-key option to switch to.
 
 ### What the results mean
 

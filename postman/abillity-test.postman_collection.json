@@ -1,10 +1,74 @@
 {
   "info": {
     "name": "aBILLity API test",
-    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nChecked against api.abillity.co.uk/GettingStarted: GET returns a CompanyView with Name at\nthe top level, PATCH updates selected details, PUT would replace ALL details, and the id is\nan integer. Name is limited to 50 characters.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  1 reads the company - name, LastUpdated, flags and dates - and stores the name.\n    Read-only. Run this alone whenever you just want to check what aBILLity holds.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
+    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nChecked against api.abillity.co.uk/GettingStarted: GET returns a CompanyView with Name at\nthe top level, PATCH updates selected details, PUT would replace ALL details, and the id is\nan integer. Name is limited to 50 characters.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  0 checks the credentials against /site, the endpoint aBILLity's own examples use.\n    Run it first when anything is failing - it isolates auth from the company endpoint.\n  1 reads the company - name, LastUpdated, flags and dates - and stores the name.\n    Read-only. Run this alone whenever you just want to check what aBILLity holds.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
+    {
+      "name": "0. Check credentials (GET /site)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "SystemInformation",
+            "value": "{{systemInformation}}"
+          },
+          {
+            "key": "username",
+            "value": "{{abillityUserName}}"
+          },
+          {
+            "key": "password",
+            "value": "{{abillityPassword}}"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "https://api.abillity.co.uk/api/site"
+        },
+        "description": "The endpoint every example in aBILLity's own docs uses. Run it FIRST when something is wrong - it separates 'my credentials/headers are wrong' from 'something is wrong with the company endpoint'.\n\nRead-only.\n\nNote there is no Content-Type header here. This is a GET with no body, and sending Content-Type on a bodyless request upsets some ASP.NET stacks.\n\n200 - auth works. The problem is elsewhere.\n401 - credentials or permissions.\n500 - aBILLity threw an unhandled error. Most often SystemInformation is wrong or missing, since that is what selects which system to connect to - a bad value can fail inside the API rather than come back as a clean 401."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const code = pm.response.code;",
+              "const ctype = String(pm.response.headers.get('Content-Type') || '');",
+              "",
+              "console.log('HTTP ' + code + '  Content-Type: ' + ctype);",
+              "",
+              "if (code === 200) {",
+              "    console.log('Auth works. Your SystemInformation, username and password are all accepted.');",
+              "    console.log('If a company request still fails, the problem is that request, not your credentials.');",
+              "} else if (code === 401) {",
+              "    console.log('401 - bad credentials OR no permissions. aBILLity uses 401 for both.');",
+              "} else if (code >= 500) {",
+              "    console.log('500 - aBILLity threw an error rather than rejecting you. Check, in order:');",
+              "    console.log('  1. SystemInformation - is it exactly the value your admin gave you?');",
+              "    console.log('     It selects the system to connect to; a wrong one can fail inside the API.');",
+              "    console.log('  2. Header names: SystemInformation, username, password - no typos, no extra spaces.');",
+              "    console.log('  3. Postman Authorization tab set to \"No Auth\" - anything else adds a');",
+              "    console.log('     competing Authorization header.');",
+              "    console.log('  4. No Content-Type header on a GET (this request deliberately omits it).');",
+              "}",
+              "",
+              "if (ctype.indexOf('html') !== -1) {",
+              "    console.log('Response is HTML, not JSON - you are seeing a server error page.');",
+              "    console.log('Read the body; ASP.NET often names the underlying fault in it.');",
+              "}",
+              "",
+              "pm.test('Credentials accepted', function () { pm.response.to.have.status(200); });"
+            ]
+          }
+        }
+      ]
+    },
     {
       "name": "1. Get company \u2014 check its name (read-only)",
       "request": {
