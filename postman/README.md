@@ -1,26 +1,34 @@
 # Postman collections
 
-Four collections, each standalone. Import with **Import → File**.
+Four collections, each standalone. **Import → File.**
 
-Generated from the collection files themselves, so what's described here is what you'll actually import.
+Every request below is laid out to copy straight out: the URL, the headers, the body, and a cURL you can paste into Postman's import box to build the request without typing anything.
 
 ## Which one do I want?
 
 | Collection | What it's for | When |
 |---|---|---|
 | [`autotask-abillity-sync.postman_collection.json`](./autotask-abillity-sync.postman_collection.json) | **Set up the Autotask webhook.** One-time setup. Registers the webhook that fires when a company name changes, and tells Autotask to include your two UDFs in the payload. | Run once, when first setting the sync up, or after moving the Worker to a new URL. |
-| [`cloudflare-worker-test.postman_collection.json`](./cloudflare-worker-test.postman_collection.json) | **Test the Cloudflare Worker.** Health-checks the Worker and fires simulated webhooks at it. No Autotask involved. | First stop when a sync doesn't happen. Proves the Worker is live, configured and parsing correctly. |
+| [`cloudflare-worker-test.postman_collection.json`](./cloudflare-worker-test.postman_collection.json) | **Test the Cloudflare Worker.** Health-checks the Worker and fires simulated webhooks at it. No Autotask involved. | First stop when a sync doesn't happen. |
 | [`autotask-company-update.postman_collection.json`](./autotask-company-update.postman_collection.json) | **Rename an Autotask company.** Reads and renames a company through the Autotask API. Renaming is what fires the webhook. | End-to-end testing, without clicking through the Autotask UI. |
 | [`abillity-test.postman_collection.json`](./abillity-test.postman_collection.json) | **Check and rename in aBILLity.** Talks to aBILLity directly — credentials, company lookup, and the rename the Worker performs. | Checking what aBILLity holds, and isolating whether a failure is aBILLity's side. |
 
+## Building a request by pasting
+
+Postman turns a cURL command into a request for you:
+
+1. **Import → Raw text**
+2. Paste the `curl ...` block from any request below
+3. **Continue → Import**
+
+The `{{variables}}` come through intact, so the new request picks up whatever you've set on the Variables tab.
+
 ## Before you start
 
-Four things that cause most of the confusion:
-
-1. **Open the console.** **View → Show Postman Console.** Nearly every request logs what it found or captured — the response pane alone often isn't the whole answer.
-2. **Authorization tab must be "No Auth".** Both APIs authenticate with plain headers; anything in the Authorization tab adds a competing header.
-3. **Fill in variables on the collection's Variables tab, then Save.** Requests read `{{variableName}}` from there.
-4. **Leave the captured variables blank.** Earlier requests fill them in — each table below says which.
+1. **Open the console** — **View → Show Postman Console.** Most requests log what they found or captured.
+2. **Authorization tab must be "No Auth".** Both APIs authenticate with plain headers; anything else adds a competing header.
+3. **Fill in variables on the Variables tab, then Save.**
+4. **Leave the captured variables blank** — earlier requests fill them in.
 
 > Requests that change live data are marked **WRITES LIVE DATA**. Read-only ones can be run freely.
 
@@ -32,7 +40,9 @@ Four things that cause most of the confusion:
 
 One-time setup. Registers the webhook that fires when a company name changes, and tells Autotask to include your two UDFs in the payload.
 
-### Variables you fill in
+## Variables
+
+**You fill in:**
 
 | Variable | Set it to |
 |---|---|
@@ -42,10 +52,10 @@ One-time setup. Registers the webhook that fires when a company name changes, an
 | `webhookUrl` | `https://<worker>.workers.dev/api/CompanyNameSync?code=<WebhookToken>` |
 | `deactivationUrl` | `https://<worker>.workers.dev/api/CompanyNameSyncDeactivated?code=<WebhookToken>` |
 | `notificationEmail` | where Autotask emails if the webhook starts failing |
-| `abillityIdUdfLabel` | defaults to `aBillity Company ID` — change if yours differs |
-| `syncFlagUdfLabel` | defaults to `Sync with aBillity (yes or no)` — change if yours differs |
+| `abillityIdUdfLabel` | defaults to `aBillity Company ID` |
+| `syncFlagUdfLabel` | defaults to `Sync with aBillity (yes or no)` |
 
-### Variables filled in for you
+**Filled in for you — leave blank:**
 
 | Variable | Captured by |
 |---|---|
@@ -55,15 +65,20 @@ One-time setup. Registers the webhook that fires when a company name changes, an
 | `abillityIdUdfFieldId` | 5. Find both UDF field IDs |
 | `syncFlagUdfFieldId` | 5. Find both UDF field IDs |
 
-Leave these blank to start.
+## Headers
 
-### Requests
-
-#### `GET` 0. Get zone information (no credentials sent) — *read-only*
+Used by every request in this collection except where a request says otherwise:
 
 ```
-https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}
+ApiIntegrationcode: {{apiIntegrationCode}}
+UserName: {{userName}}
+Secret: {{secret}}
+Content-Type: application/json
 ```
+
+## Requests
+
+### 0. Get zone information (no credentials sent) — *read-only*
 
 Finds which Autotask server your account lives on and stores it as {{baseUrl}}.
 
@@ -71,11 +86,26 @@ This request sends NO credentials, so it cannot lock anything. Run it first.
 
 If it does not return a url, the username is not a recognised Autotask API user.
 
-#### `GET` 1. Test credentials — *read-only*
+**URL**
 
 ```
-{{baseUrl}}/V1.0/Companies/entityInformation
+https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}
 ```
+
+**Headers** (different from the collection default above)
+
+```
+Content-Type: application/json
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET 'https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}' \
+  -H 'Content-Type: application/json'
+```
+
+### 1. Test credentials — *read-only*
 
 One authenticated request, to confirm the credentials before creating anything.
 
@@ -85,17 +115,35 @@ One authenticated request, to confirm the credentials before creating anything.
 
 Do not hammer this. Each failure counts toward a lockout.
 
-#### `POST` 2. Create the webhook — *writes configuration*
+**URL**
 
 ```
-{{baseUrl}}/V1.0/CompanyWebhooks
+{{baseUrl}}/V1.0/Companies/entityInformation
 ```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{baseUrl}}/V1.0/Companies/entityInformation' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### 2. Create the webhook — *writes configuration*
 
 Creates the webhook and stores its id as {{webhookId}}.
 
 Only run this ONCE. Running it again creates a duplicate webhook - use 'List webhooks' and 'Delete webhook' at the bottom to tidy up.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -110,25 +158,48 @@ Only run this ONCE. Running it again creates a duplicate webhook - use 'List web
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `GET` 3. Find the CompanyName fieldID — *read-only*
+```bash
+curl -X POST '{{baseUrl}}/V1.0/CompanyWebhooks' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"IsActive":true,"DeactivationUrl":"{{deactivationUrl}}","IsSubscribedToUpdateEvents":true,"Name":"Company Name -> aBILLity Sync","SecretKey":"{{$guid}}","SendThresholdExceededNotification":true,"WebhookUrl":"{{webhookUrl}}","NotificationEmailAddress":"{{notificationEmail}}"}'
+```
+
+### 3. Find the CompanyName fieldID — *read-only*
+
+Looks up the numeric id Autotask uses for the CompanyName field, and stores it as {{companyNameFieldId}}.
+
+**URL**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhookFields/entityInformation/fields
 ```
 
-Looks up the numeric id Autotask uses for the CompanyName field, and stores it as {{companyNameFieldId}}.
+**cURL** — paste into Import → Raw text
 
-#### `POST` 4. Register CompanyName as the trigger field — *writes configuration*
+```bash
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhookFields/entityInformation/fields' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### 4. Register CompanyName as the trigger field — *writes configuration*
+
+Makes a change to the company name the thing that fires the webhook.
+
+**URL**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields
 ```
 
-Makes a change to the company name the thing that fires the webhook.
-
-<details><summary>Request body</summary>
+**Body** — raw / JSON
 
 ```json
 {
@@ -139,27 +210,50 @@ Makes a change to the company name the thing that fires the webhook.
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `GET` 5. Find both UDF field IDs — *read-only*
+```bash
+curl -X POST '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"FieldID":"{{companyNameFieldId}}","IsSubscribedField":true,"IsDisplayAlwaysField":true,"WebhookID":"{{webhookId}}"}'
+```
 
-```
-{{baseUrl}}/V1.0/CompanyWebhookUdfFields/entityInformation/fields
-```
+### 5. Find both UDF field IDs — *read-only*
 
 Finds the numeric ids for your two Company UDFs, matching on the labels in {{abillityIdUdfLabel}} and {{syncFlagUdfLabel}}.
 
 If either is not found, the console lists every Company UDF label Autotask reports - copy the exact spelling from there into the collection variables.
 
-#### `POST` 6. Register UDF: {{abillityIdUdfLabel}} — *writes configuration*
+**URL**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhookUdfFields/entityInformation/fields
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhookUdfFields/entityInformation/fields' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### 6. Register UDF: {{abillityIdUdfLabel}} — *writes configuration*
+
+Adds this UDF to the webhook payload as a display-always field. It does not trigger the webhook - it just rides along so the receiver can read it.
+
+**URL**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields
 ```
 
-Adds this UDF to the webhook payload as a display-always field. It does not trigger the webhook - it just rides along so the receiver can read it.
-
-<details><summary>Request body</summary>
+**Body** — raw / JSON
 
 ```json
 {
@@ -170,17 +264,28 @@ Adds this UDF to the webhook payload as a display-always field. It does not trig
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `POST` 7. Register UDF: {{syncFlagUdfLabel}} — *writes configuration*
+```bash
+curl -X POST '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"UdfFieldID":"{{abillityIdUdfFieldId}}","IsSubscribedField":false,"IsDisplayAlwaysField":true,"WebhookID":"{{webhookId}}"}'
+```
+
+### 7. Register UDF: {{syncFlagUdfLabel}} — *writes configuration*
+
+Adds this UDF to the webhook payload as a display-always field. It does not trigger the webhook - it just rides along so the receiver can read it.
+
+**URL**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields
 ```
 
-Adds this UDF to the webhook payload as a display-always field. It does not trigger the webhook - it just rides along so the receiver can read it.
-
-<details><summary>Request body</summary>
+**Body** — raw / JSON
 
 ```json
 {
@@ -191,31 +296,60 @@ Adds this UDF to the webhook payload as a display-always field. It does not trig
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### Utilities
+```bash
+curl -X POST '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"UdfFieldID":"{{syncFlagUdfFieldId}}","IsSubscribedField":false,"IsDisplayAlwaysField":true,"WebhookID":"{{webhookId}}"}'
+```
 
-#### `GET` List webhooks — *read-only*
+## Utilities
+
+### List webhooks — *read-only*
+
+Shows every Company webhook on the account. Use it to confirm what was created, or to find the id of a duplicate you want to remove.
+
+**URL**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
 ```
 
-Shows every Company webhook on the account. Use it to confirm what was created, or to find the id of a duplicate you want to remove.
+**cURL** — paste into Import → Raw text
 
-#### `GET` Get webhook {{webhookId}} — *read-only*
+```bash
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/query?search={"filter":[{"op":"gte","field":"id","value":0}]}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### Get webhook {{webhookId}} — *read-only*
+
+Shows the webhook's current settings. Run it before and after an update to confirm the change landed.
+
+**URL**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}
 ```
 
-Shows the webhook's current settings. Run it before and after an update to confirm the change landed.
+**cURL** — paste into Import → Raw text
 
-#### `PATCH` Update webhook URLs — *writes configuration*
+```bash
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
 
-```
-{{baseUrl}}/V1.0/CompanyWebhooks
-```
+### Update webhook URLs — *writes configuration*
 
 Changes an existing webhook's two URLs without deleting and recreating it, so the trigger field and UDF registrations from requests 4, 6 and 7 are kept.
 
@@ -223,7 +357,13 @@ Set the webhookUrl and deactivationUrl collection variables to the new values fi
 
 If the webhook has been deactivated (Autotask switches off webhooks whose endpoint keeps failing), add "IsActive": true to the body to turn it back on.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -233,17 +373,38 @@ If the webhook has been deactivated (Autotask switches off webhooks whose endpoi
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `DELETE` Delete webhook {{webhookId}} — *writes configuration*
+```bash
+curl -X PATCH '{{baseUrl}}/V1.0/CompanyWebhooks' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"{{webhookId}}","WebhookUrl":"{{webhookUrl}}","DeactivationUrl":"{{deactivationUrl}}"}'
+```
+
+### Delete webhook {{webhookId}} — *writes configuration*
+
+Deletes the webhook currently in {{webhookId}}. Use this to clean up a duplicate or start over.
+
+Set {{webhookId}} by hand first if you want to delete a different one.
+
+**URL**
 
 ```
 {{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}
 ```
 
-Deletes the webhook currently in {{webhookId}}. Use this to clean up a duplicate or start over.
+**cURL** — paste into Import → Raw text
 
-Set {{webhookId}} by hand first if you want to delete a different one.
+```bash
+curl -X DELETE '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
 
 ---
 
@@ -253,25 +414,31 @@ Set {{webhookId}} by hand first if you want to delete a different one.
 
 Health-checks the Worker and fires simulated webhooks at it. No Autotask involved.
 
-### Variables you fill in
+## Variables
+
+**You fill in:**
 
 | Variable | Set it to |
 |---|---|
 | `workerBaseUrl` | `https://<worker>.workers.dev` — **no trailing slash** |
 | `webhookToken` | the `WebhookToken` secret set on the Worker |
-| `syncFlagUdfLabel` | defaults to `Sync with aBillity (yes or no)` — change if yours differs |
-| `abillityIdUdfLabel` | defaults to `aBillity Company ID` — change if yours differs |
-| `testAutotaskCompanyId` | defaults to `12345` — change if yours differs |
+| `syncFlagUdfLabel` | defaults to `Sync with aBillity (yes or no)` |
+| `abillityIdUdfLabel` | defaults to `aBillity Company ID` |
+| `testAutotaskCompanyId` | defaults to `12345` |
 | `testAbillityCompanyId` | a real aBILLity company id — request 4 renames it |
-| `testNewName` | defaults to `Worker Test - safe to rename back` — change if yours differs |
+| `testNewName` | defaults to `Worker Test - safe to rename back` |
 
-### Requests
+## Headers
 
-#### `GET` 1. Health check — *read-only*
+Used by every request in this collection except where a request says otherwise:
 
 ```
-{{workerBaseUrl}}/health?code={{webhookToken}}
+Content-Type: application/json
 ```
+
+## Requests
+
+### 1. Health check — *read-only*
 
 Proves the Worker is deployed, configured and that your token matches. Involves no Autotask and no aBILLity.
 
@@ -279,21 +446,49 @@ Reports only WHETHER each setting is present, never its value.
 
 Run this before anything else - if it fails, nothing downstream can work.
 
-#### `GET` 2. Health check with a wrong token (expect 401) — *read-only*
+**URL**
 
 ```
-{{workerBaseUrl}}/health?code=deliberately-wrong
+{{workerBaseUrl}}/health?code={{webhookToken}}
 ```
+
+**Headers** (different from the collection default above)
+
+```
+(none)
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{workerBaseUrl}}/health?code={{webhookToken}}'
+```
+
+### 2. Health check with a wrong token (expect 401) — *read-only*
 
 Confirms the Worker actually rejects a bad token - that the auth check works rather than letting everything through.
 
 A 401 here is the PASS.
 
-#### `POST` 3. Simulate a webhook - NOT flagged for sync (safe) — **WRITES LIVE DATA**
+**URL**
 
 ```
-{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}
+{{workerBaseUrl}}/health?code=deliberately-wrong
 ```
+
+**Headers** (different from the collection default above)
+
+```
+(none)
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{workerBaseUrl}}/health?code=deliberately-wrong'
+```
+
+### 3. Simulate a webhook - NOT flagged for sync (safe) — **WRITES LIVE DATA**
 
 Sends a webhook-shaped payload with the sync flag set to No.
 
@@ -305,7 +500,13 @@ Expect 200, and in the Worker log:
   Request: POST /api/CompanyNameSync  
   ... is not flagged for aBILLity sync ... - skipping
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -329,13 +530,15 @@ Expect 200, and in the Worker log:
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `POST` 4. Simulate a webhook - flagged, real sync (WRITES TO aBILLITY) — **WRITES LIVE DATA**
+```bash
+curl -X POST '{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"EntityType":"Company","Action":"Update","Id":"{{testAutotaskCompanyId}}","Fields":[{"name":"CompanyName","value":"{{testNewName}}"},{"name":"{{syncFlagUdfLabel}}","value":"No"},{"name":"{{abillityIdUdfLabel}}","value":"{{testAbillityCompanyId}}"}]}'
+```
 
-```
-{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}
-```
+### 4. Simulate a webhook - flagged, real sync (WRITES TO aBILLITY) — **WRITES LIVE DATA**
 
 The same payload with the flag set to Yes, so the Worker performs the real aBILLity rename.
 
@@ -348,7 +551,13 @@ A 500 with 'sync failed' means the Worker reached aBILLity and aBILLity refused 
 
 NOTE: this proves the Worker and aBILLity work together. It does NOT prove Autotask sends this payload shape - only a real webhook shows that.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -372,19 +581,27 @@ NOTE: this proves the Worker and aBILLity work together. It does NOT prove Autot
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `POST` 5. Simulate the deactivation callback — **WRITES LIVE DATA**
+```bash
+curl -X POST '{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"EntityType":"Company","Action":"Update","Id":"{{testAutotaskCompanyId}}","Fields":[{"name":"CompanyName","value":"{{testNewName}}"},{"name":"{{syncFlagUdfLabel}}","value":"Yes"},{"name":"{{abillityIdUdfLabel}}","value":"{{testAbillityCompanyId}}"}]}'
+```
 
-```
-{{workerBaseUrl}}/api/CompanyNameSyncDeactivated?code={{webhookToken}}
-```
+### 5. Simulate the deactivation callback — **WRITES LIVE DATA**
 
 The endpoint Autotask calls if it ever deactivates the webhook. It only logs.
 
 Writes nothing anywhere. Expect 200 and 'Autotask webhook deactivated: ...' in the log.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+{{workerBaseUrl}}/api/CompanyNameSyncDeactivated?code={{webhookToken}}
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -392,7 +609,13 @@ Writes nothing anywhere. Expect 200 and 'Autotask webhook deactivated: ...' in t
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X POST '{{workerBaseUrl}}/api/CompanyNameSyncDeactivated?code={{webhookToken}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"reason":"manual test from Postman"}'
+```
 
 ---
 
@@ -402,7 +625,9 @@ Writes nothing anywhere. Expect 200 and 'Autotask webhook deactivated: ...' in t
 
 Reads and renames a company through the Autotask API. Renaming is what fires the webhook.
 
-### Variables you fill in
+## Variables
+
+**You fill in:**
 
 | Variable | Set it to |
 |---|---|
@@ -410,9 +635,9 @@ Reads and renames a company through the Autotask API. Renaming is what fires the
 | `apiIntegrationCode` | Tracking Identifier from Admin → Extensions & Integrations → Integration Vendor API user |
 | `secret` | the API user's generated Password/Secret |
 | `companySearch` | part of a company name to search for |
-| `newCompanyName` | defaults to `Rename Test - safe to change back` — change if yours differs |
+| `newCompanyName` | defaults to `Rename Test - safe to change back` |
 
-### Variables filled in for you
+**Filled in for you — leave blank:**
 
 | Variable | Captured by |
 |---|---|
@@ -420,45 +645,89 @@ Reads and renames a company through the Autotask API. Renaming is what fires the
 | `companyId` | 1. Find a company by name |
 | `originalCompanyName` | 2. Get company {{companyId}} (read-only) |
 
-Leave these blank to start.
+## Headers
 
-### Requests
-
-#### `GET` 0. Get zone information (no credentials sent) — *read-only*
+Used by every request in this collection except where a request says otherwise:
 
 ```
-https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}
+ApiIntegrationcode: {{apiIntegrationCode}}
+UserName: {{userName}}
+Secret: {{secret}}
+Content-Type: application/json
 ```
+
+## Requests
+
+### 0. Get zone information (no credentials sent) — *read-only*
 
 Finds which Autotask server your account lives on and stores it as {{baseUrl}}.
 
 Sends NO credentials - safe to run at will.
 
-#### `GET` 1. Find a company by name — *read-only*
+**URL**
 
 ```
-{{baseUrl}}/V1.0/Companies/query?search={"filter":[{"op":"contains","field":"companyName","value":"{{companySearch}}"}]}
+https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}
 ```
+
+**Headers** (different from the collection default above)
+
+```
+Content-Type: application/json
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET 'https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}' \
+  -H 'Content-Type: application/json'
+```
+
+### 1. Find a company by name — *read-only*
 
 Lists companies whose name contains {{companySearch}}, with their ids.
 
 Read-only. Copy the id you want into {{companyId}} (or if there is exactly one match it is set for you).
 
-#### `GET` 2. Get company {{companyId}} (read-only) — *read-only*
+**URL**
 
 ```
-{{baseUrl}}/V1.0/Companies/{{companyId}}
+{{baseUrl}}/V1.0/Companies/query?search={"filter":[{"op":"contains","field":"companyName","value":"{{companySearch}}"}]}
 ```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{baseUrl}}/V1.0/Companies/query?search={"filter":[{"op":"contains","field":"companyName","value":"{{companySearch}}"}]}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### 2. Get company {{companyId}} (read-only) — *read-only*
 
 Shows the company's current name and every user-defined field on it.
 
 Read-only. Stores the current name in {{originalCompanyName}} so request 4 can put it back.
 
-#### `PATCH` 3. Update the company name — **WRITES LIVE DATA**
+**URL**
 
 ```
-{{baseUrl}}/V1.0/Companies
+{{baseUrl}}/V1.0/Companies/{{companyId}}
 ```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{baseUrl}}/V1.0/Companies/{{companyId}}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### 3. Update the company name — **WRITES LIVE DATA**
 
 Renames the company.
 
@@ -468,7 +737,13 @@ Run request 2 first so the original name is captured, then request 4 to put it b
 
 Note the id goes in the BODY, not the URL - that is Autotask's PATCH convention.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+{{baseUrl}}/V1.0/Companies
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -477,19 +752,30 @@ Note the id goes in the BODY, not the URL - that is Autotask's PATCH convention.
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `PATCH` 4. Restore the original name — **WRITES LIVE DATA**
+```bash
+curl -X PATCH '{{baseUrl}}/V1.0/Companies' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"{{companyId}}","companyName":"{{newCompanyName}}"}'
+```
 
-```
-{{baseUrl}}/V1.0/Companies
-```
+### 4. Restore the original name — **WRITES LIVE DATA**
 
 Puts the name back to whatever request 2 captured.
 
 If {{originalCompanyName}} is empty, request 2 did not capture it - set the name by hand instead of running this.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+{{baseUrl}}/V1.0/Companies
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -498,7 +784,16 @@ If {{originalCompanyName}} is empty, request 2 did not capture it - set the name
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X PATCH '{{baseUrl}}/V1.0/Companies' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json' \
+  -d '{"id":"{{companyId}}","companyName":"{{originalCompanyName}}"}'
+```
 
 ---
 
@@ -508,7 +803,9 @@ If {{originalCompanyName}} is empty, request 2 did not capture it - set the name
 
 Talks to aBILLity directly — credentials, company lookup, and the rename the Worker performs.
 
-### Variables you fill in
+## Variables
+
+**You fill in:**
 
 | Variable | Set it to |
 |---|---|
@@ -516,23 +813,29 @@ Talks to aBILLity directly — credentials, company lookup, and the rename the W
 | `abillityUserName` | your aBILLity API username |
 | `abillityPassword` | your aBILLity API password |
 | `companyId` | the aBILLity company id to look at |
-| `testName` | defaults to `Test Rename - safe to ignore` — change if yours differs |
+| `testName` | defaults to `Test Rename - safe to ignore` |
 
-### Variables filled in for you
+**Filled in for you — leave blank:**
 
 | Variable | Captured by |
 |---|---|
 | `originalName` | 1. Get company — check its name (read-only) |
 
-Leave these blank to start.
+## Headers
 
-### Requests
-
-#### `GET` 0. Check credentials (GET /site) — *read-only*
+Used by every request in this collection except where a request says otherwise:
 
 ```
-https://api.abillity.co.uk/api/site
+SystemInformation: {{systemInformation}}
+username: {{abillityUserName}}
+password: {{abillityPassword}}
+Content-Type: application/json
+Accept: application/json
 ```
+
+## Requests
+
+### 0. Check credentials (GET /site) — *read-only*
 
 The endpoint every example in aBILLity's own docs uses. Run it FIRST when something is wrong - it separates 'my credentials/headers are wrong' from 'something is wrong with the company endpoint'.
 
@@ -544,11 +847,32 @@ Note there is no Content-Type header here. This is a GET with no body, and sendi
 401 - credentials or permissions.  
 500 - aBILLity threw an unhandled error. Most often SystemInformation is wrong or missing, since that is what selects which system to connect to - a bad value can fail inside the API rather than come back as a clean 401.
 
-#### `GET` 1. Get company — check its name (read-only) — *read-only*
+**URL**
 
 ```
-https://api.abillity.co.uk/api/company/{{companyId}}
+https://api.abillity.co.uk/api/site
 ```
+
+**Headers** (different from the collection default above)
+
+```
+SystemInformation: {{systemInformation}}
+username: {{abillityUserName}}
+password: {{abillityPassword}}
+Accept: application/json
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET 'https://api.abillity.co.uk/api/site' \
+  -H 'SystemInformation: {{systemInformation}}' \
+  -H 'username: {{abillityUserName}}' \
+  -H 'password: {{abillityPassword}}' \
+  -H 'Accept: application/json'
+```
+
+### 1. Get company — check its name (read-only) — *read-only*
 
 GET api/company/{id} - the details of one company. Read-only, changes nothing, so run it as often as you like.
 
@@ -559,11 +883,24 @@ LastUpdated is the useful one when testing the sync: after renaming the company 
 401 = bad credentials OR no company permissions (aBILLity uses 401 for both).  
 404 = no such company, or no companies in this database.
 
-#### `PATCH` 2. Rename company (WRITES LIVE DATA) — **WRITES LIVE DATA**
+**URL**
 
 ```
 https://api.abillity.co.uk/api/company/{{companyId}}
 ```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET 'https://api.abillity.co.uk/api/company/{{companyId}}' \
+  -H 'SystemInformation: {{systemInformation}}' \
+  -H 'username: {{abillityUserName}}' \
+  -H 'password: {{abillityPassword}}' \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json'
+```
+
+### 2. Rename company (WRITES LIVE DATA) — **WRITES LIVE DATA**
 
 The exact call the Worker makes when an Autotask company is renamed.
 
@@ -573,7 +910,13 @@ Run request 1 first so the original name is captured, then request 3 to put it b
 
 aBILLity caps the name at 50 characters and the Worker truncates to match - keep {{testName}} under 50 unless you are deliberately testing that.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+https://api.abillity.co.uk/api/company/{{companyId}}
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -581,19 +924,31 @@ aBILLity caps the name at 50 characters and the Worker truncates to match - keep
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
 
-#### `PATCH` 3. Restore original name — **WRITES LIVE DATA**
+```bash
+curl -X PATCH 'https://api.abillity.co.uk/api/company/{{companyId}}' \
+  -H 'SystemInformation: {{systemInformation}}' \
+  -H 'username: {{abillityUserName}}' \
+  -H 'password: {{abillityPassword}}' \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -d '{"Name":"{{testName}}"}'
+```
 
-```
-https://api.abillity.co.uk/api/company/{{companyId}}
-```
+### 3. Restore original name — **WRITES LIVE DATA**
 
 Puts the name back to whatever request 1 captured in {{originalName}}.
 
 If {{originalName}} is empty, request 1 did not capture it - set the name by hand in aBILLity instead of running this.
 
-<details><summary>Request body</summary>
+**URL**
+
+```
+https://api.abillity.co.uk/api/company/{{companyId}}
+```
+
+**Body** — raw / JSON
 
 ```json
 {
@@ -601,7 +956,17 @@ If {{originalName}} is empty, request 1 did not capture it - set the name by han
 }
 ```
 
-</details>
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X PATCH 'https://api.abillity.co.uk/api/company/{{companyId}}' \
+  -H 'SystemInformation: {{systemInformation}}' \
+  -H 'username: {{abillityUserName}}' \
+  -H 'password: {{abillityPassword}}' \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -d '{"Name":"{{originalName}}"}'
+```
 
 ---
 
@@ -614,7 +979,7 @@ If {{originalName}} is empty, request 1 did not capture it - set the name by han
 | `401` from Autotask | Wrong credentials *or* a locked account — indistinguishable. Don't retry repeatedly; each attempt counts toward a lockout. |
 | `405 method not allowed` from the Worker | The path didn't match. The log's `Request: GET /...` line shows what actually arrived — usually a trailing slash on `workerBaseUrl`, or `/api/health` instead of `/health`. |
 | HTML instead of JSON | The request never reached the API. The URL is wrong, not the credentials. |
-| Autotask `PATCH` seems to do nothing | The id goes in the **body**, not the URL. That's Autotask's convention. |
+| Autotask `PATCH` seems to do nothing | The id goes in the **body**, not the URL. |
 | A variable reads as empty | Saved on the Variables tab? Requests read the saved value. |
 
 # Diagnosing a sync that didn't happen
