@@ -528,6 +528,172 @@
           ]
         },
         {
+          "name": "Why isn't it firing? 1 - trigger fields",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields/query?search={\"filter\":[{\"op\":\"gte\",\"field\":\"id\",\"value\":0}]}"
+            },
+            "description": "Lists the fields registered on the webhook.\n\nA webhook with no subscribed field fires on nothing, which looks exactly like a broken endpoint. Creating the webhook (request 2) and registering the trigger (request 4) are separate calls - if request 4 never succeeded, this is your answer.\n\nRead-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const items = (pm.response.json().items) || [];",
+                  "console.log(items.length + ' field(s) registered on webhook ' + pm.collectionVariables.get('webhookId') + ':');",
+                  "items.forEach(f => console.log('  fieldID ' + f.fieldID +",
+                  "    '  subscribed=' + f.isSubscribedField +",
+                  "    '  displayAlways=' + f.isDisplayAlwaysField));",
+                  "",
+                  "const subscribed = items.filter(f => f.isSubscribedField === true);",
+                  "console.log('');",
+                  "if (subscribed.length === 0) {",
+                  "    console.log('NOTHING IS SUBSCRIBED. This webhook cannot fire on any field change.');",
+                  "    console.log('Run request 3 then request 4 to register CompanyName as the trigger.');",
+                  "} else {",
+                  "    console.log(subscribed.length + ' subscribed field(s) - the webhook has a trigger.');",
+                  "    console.log('Cross-check the fieldID against request 3, which prints CompanyName\\'s id.');",
+                  "}",
+                  "",
+                  "pm.test('At least one subscribed trigger field', function () {",
+                  "    pm.expect(subscribed.length, 'no subscribed fields - nothing can fire this webhook').to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Why isn't it firing? 2 - UDF fields",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields/query?search={\"filter\":[{\"op\":\"gte\",\"field\":\"id\",\"value\":0}]}"
+            },
+            "description": "Lists the UDFs riding along in the payload. There should be two.\n\nThis does not stop the webhook firing - it stops the Worker acting on it, which looks different in the log: the request arrives but reports a missing field.\n\nRead-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const items = (pm.response.json().items) || [];",
+                  "console.log(items.length + ' UDF field(s) registered:');",
+                  "items.forEach(f => console.log('  udfFieldID ' + f.udfFieldID +",
+                  "    '  subscribed=' + f.isSubscribedField +",
+                  "    '  displayAlways=' + f.isDisplayAlwaysField));",
+                  "",
+                  "if (items.length < 2) {",
+                  "    console.log('');",
+                  "    console.log('Expected 2 - the aBILLity id and the sync flag. With fewer, the Worker');",
+                  "    console.log('receives a payload missing one of them and skips every company.');",
+                  "    console.log('Run request 5, then 6 and 7.');",
+                  "}",
+                  "",
+                  "pm.test('Both UDFs registered', function () {",
+                  "    pm.expect(items.length, 'expected 2 UDF fields').to.be.at.least(2);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Why isn't it firing? 3 - excluded resources",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/ExcludedResources/query?search={\"filter\":[{\"op\":\"gte\",\"field\":\"id\",\"value\":0}]}"
+            },
+            "description": "Lists resources whose changes do NOT fire this webhook.\n\nAutotask can exclude a resource to stop a webhook re-triggering on its own writes. If your API user is excluded, a rename made through the API will not fire the webhook while the same rename made in the UI will - which is exactly the symptom of 'nothing happens when I test with Postman'.\n\nRead-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const items = (pm.response.json().items) || [];",
+                  "    console.log(items.length + ' excluded resource(s):');",
+                  "    items.forEach(r => console.log('  resourceID ' + r.resourceID));",
+                  "    if (items.length) {",
+                  "        console.log('');",
+                  "        console.log('Changes made BY these resources do not fire the webhook.');",
+                  "        console.log('If your API user is listed, renames you make through the API are');",
+                  "        console.log('silently ignored while UI renames still fire. That is the classic');",
+                  "        console.log('loop-prevention setting.');",
+                  "    } else {",
+                  "        console.log('None - changes by any resource should fire the webhook.');",
+                  "    }",
+                  "} else {",
+                  "    console.log('HTTP ' + pm.response.code + ' - this Autotask version may not expose');",
+                  "    console.log('ExcludedResources. Not conclusive either way.');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Update webhook URLs",
           "request": {
             "method": "PATCH",

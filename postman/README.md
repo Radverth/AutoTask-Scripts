@@ -349,6 +349,78 @@ curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}' \
   -H 'Content-Type: application/json'
 ```
 
+### Why isn't it firing? 1 - trigger fields — *read-only*
+
+Lists the fields registered on the webhook.
+
+A webhook with no subscribed field fires on nothing, which looks exactly like a broken endpoint. Creating the webhook (request 2) and registering the trigger (request 4) are separate calls - if request 4 never succeeded, this is your answer.
+
+Read-only.
+
+**URL**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### Why isn't it firing? 2 - UDF fields — *read-only*
+
+Lists the UDFs riding along in the payload. There should be two.
+
+This does not stop the webhook firing - it stops the Worker acting on it, which looks different in the log: the request arrives but reports a missing field.
+
+Read-only.
+
+**URL**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
+### Why isn't it firing? 3 - excluded resources — *read-only*
+
+Lists resources whose changes do NOT fire this webhook.
+
+Autotask can exclude a resource to stop a webhook re-triggering on its own writes. If your API user is excluded, a rename made through the API will not fire the webhook while the same rename made in the UI will - which is exactly the symptom of 'nothing happens when I test with Postman'.
+
+Read-only.
+
+**URL**
+
+```
+{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/ExcludedResources/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
+```
+
+**cURL** — paste into Import → Raw text
+
+```bash
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/ExcludedResources/query?search={"filter":[{"op":"gte","field":"id","value":0}]}' \
+  -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
+  -H 'UserName: {{userName}}' \
+  -H 'Secret: {{secret}}' \
+  -H 'Content-Type: application/json'
+```
+
 ### Update webhook URLs — *writes configuration*
 
 Changes an existing webhook's two URLs without deleting and recreating it, so the trigger field and UDF registrations from requests 4, 6 and 7 are kept.
@@ -974,24 +1046,28 @@ curl -X PATCH 'https://api.abillity.co.uk/api/company/{{companyId}}' \
 
 | Symptom | Cause |
 |---|---|
-| `500` from aBILLity | Usually `SystemInformation`. **`SYSTEM` is a placeholder in aBILLity's docs, not a value** — get the real one from your aBILLity administrator. |
+| **The webhook never calls the Worker** | Run *Why isn't it firing? 1* — a webhook with no subscribed trigger field fires on nothing. Then check `isActive` with *Get webhook*, and *Why isn't it firing? 3* for an excluded resource. |
+| `500` from aBILLity | Usually `SystemInformation`. **`SYSTEM` is a placeholder in aBILLity's docs, not a value.** |
 | `401` from aBILLity | Bad credentials *or* a user without company permissions. aBILLity uses 401 for both. |
-| `401` from Autotask | Wrong credentials *or* a locked account — indistinguishable. Don't retry repeatedly; each attempt counts toward a lockout. |
-| `405 method not allowed` from the Worker | The path didn't match. The log's `Request: GET /...` line shows what actually arrived — usually a trailing slash on `workerBaseUrl`, or `/api/health` instead of `/health`. |
+| `401` from Autotask | Wrong credentials *or* a locked account — indistinguishable. Don't retry repeatedly. |
+| `405` from the Worker | The path didn't match. The log's `Request: GET /...` line shows what arrived. |
 | HTML instead of JSON | The request never reached the API. The URL is wrong, not the credentials. |
 | Autotask `PATCH` seems to do nothing | The id goes in the **body**, not the URL. |
-| A variable reads as empty | Saved on the Variables tab? Requests read the saved value. |
 
-# Diagnosing a sync that didn't happen
+# The webhook isn't firing at all
 
-In order — each step rules out one layer:
+In order, all read-only:
 
-1. **Worker** → request 1 (health check). Live and configured?
-2. **Worker** → request 3 (simulated webhook, not flagged). Routing and parsing work? Writes nothing.
-3. **aBILLity** → request 0 (credentials). Auth good?
-4. **aBILLity** → request 1, using the id from the company's UDF. Does that company exist?
-5. **Autotask setup** → *List webhooks*. Does the webhook exist, and is it active?
-6. **Autotask company update** → requests 0–2. Are both UDFs actually set on the company?
-7. With the Worker log open, **Autotask company update** → request 3. Watch for `Request: POST /api/CompanyNameSync`.
+1. **Utilities → List webhooks.** Does it exist? Is `isActive` true? Is there more than one?
+2. **Utilities → Why isn't it firing? 1 — trigger fields.** **The most common cause.** Creating the webhook and registering `CompanyName` as its trigger are separate calls; with nothing subscribed it fires on nothing. Fix by running requests 3 then 4.
+3. **Utilities → Why isn't it firing? 3 — excluded resources.** If your API user is excluded, renames made *through the API* don't fire it while UI renames do.
+4. **Try renaming in the Autotask UI** rather than through the API. If the UI fires it and the API doesn't, it's step 3.
+5. **Utilities → Get webhook.** Do `webhookUrl` and `deactivationUrl` match the deployed Worker, `?code=` included?
+6. **Worker → request 1.** Health check: is the Worker live at that URL?
 
-No log line at step 7 means Autotask never called the Worker — go back to step 5.
+# Diagnosing a sync that fires but does nothing
+
+1. **Worker** → request 3 (simulated webhook, not flagged). Routing and parsing work? Writes nothing.
+2. **aBILLity** → request 0 (credentials), then request 1 on the id from the UDF.
+3. **Autotask company update** → requests 0–2. Are both UDFs actually set on the company?
+4. **Utilities → Why isn't it firing? 2 — UDF fields.** Both UDFs registered on the webhook? Without them the payload arrives missing a field and every company is skipped.
