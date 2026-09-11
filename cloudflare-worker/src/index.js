@@ -44,9 +44,13 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // Tolerate a doubled or trailing slash - a base URL ending in "/" turns
+    // ".../health" into "//health", which would otherwise match nothing.
+    const path = url.pathname.replace(/\/{2,}/g, "/").replace(/\/+$/, "") || "/";
+
     // Log every arrival first. Without this an empty log is ambiguous - it
     // cannot tell "Autotask never called us" from "we rejected the call".
-    console.log(`Request: ${request.method} ${url.pathname}`);
+    console.log(`Request: ${request.method} ${path}`);
 
     const missing = REQUIRED_SETTINGS.filter((name) => !env[name]);
     if (missing.length > 0) {
@@ -64,7 +68,7 @@ export default {
 
     // A health check you can hit from a browser to prove the Worker is live
     // and configured. Reports only whether each setting is present.
-    if (request.method === "GET" && url.pathname === "/health") {
+    if (request.method === "GET" && path === "/health") {
       if (!tokenOk) {
         console.warn("Health check rejected: bad or missing ?code=");
         return text(401, "unauthorized");
@@ -82,8 +86,15 @@ export default {
     }
 
     if (request.method !== "POST") {
-      console.warn(`Rejected ${request.method} - only POST is accepted here.`);
-      return text(405, "method not allowed");
+      console.warn(
+        `Rejected ${request.method} ${path} - the webhook endpoints accept POST only. ` +
+          `The one thing you can GET is /health?code=<WebhookToken>.`
+      );
+      return text(
+        405,
+        `method not allowed: ${request.method} ${path}\n` +
+          `The webhook endpoints are POST only. For a browser check use /health?code=<WebhookToken>.`
+      );
     }
 
     if (!tokenOk) {
@@ -95,14 +106,14 @@ export default {
       return text(401, "unauthorized");
     }
 
-    switch (url.pathname) {
+    switch (path) {
       case "/api/CompanyNameSync":
         return handleCompanyNameSync(request, env);
       case "/api/CompanyNameSyncDeactivated":
         return handleDeactivated(request);
       default:
         console.warn(
-          `Rejected: nothing serves ${url.pathname}. ` +
+          `Rejected: nothing serves ${path}. ` +
             `Expected /api/CompanyNameSync or /api/CompanyNameSyncDeactivated ` +
             `(both are case-sensitive).`
         );

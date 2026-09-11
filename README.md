@@ -453,6 +453,7 @@ https://autotask-abillity-sync.<your-subdomain>.workers.dev/health?code=<YOUR_WE
 - **`ok` plus a list of settings** — the Worker is deployed, configured, and your token is right. Any problem is upstream in Autotask.
 - **`unauthorized`** — the Worker is live but your `WebhookToken` doesn't match the `?code=` you used. The registered webhook URL has the same problem.
 - **`not configured`** — a variable or secret from step 2.4/2.5 is missing; the message names which.
+- **`method not allowed`** — you're running a build of the Worker from before `/health` existed. Redeploy `cloudflare-worker/src/index.js`. (If the log shows `Request: GET /health` and you still get this, you're on an even older build — the log line is new too.)
 - **Nothing / a Cloudflare error** — the Worker isn't deployed at that hostname.
 
 It reports only *whether* each setting is present, never its value.
