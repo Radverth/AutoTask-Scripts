@@ -694,6 +694,69 @@
           ]
         },
         {
+          "name": "Why isn't it firing? 4 - the owner resource",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "ApiIntegrationcode",
+                "value": "{{apiIntegrationCode}}"
+              },
+              {
+                "key": "UserName",
+                "value": "{{userName}}"
+              },
+              {
+                "key": "Secret",
+                "value": "{{secret}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/V1.0/Resources/{{ownerResourceId}}"
+            },
+            "description": "Looks up the resource that owns the webhook (its ownerResourceID).\n\nA webhook owned by an inactive, locked or deactivated resource can stop dispatching while still reporting isActive: true - the config looks perfect and nothing is ever sent.\n\nSet ownerResourceId from the webhook's ownerResourceID first.\n\nRead-only."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code !== 200) {",
+                  "    console.log('HTTP ' + pm.response.code + ' - could not read the resource.');",
+                  "} else {",
+                  "    const j = pm.response.json();",
+                  "    const r = j.item || (j.items && j.items[0]) || j;",
+                  "    console.log('--- webhook owner, resource ' + r.id + ' ---');",
+                  "    console.log('userName  : ' + r.userName);",
+                  "    console.log('email     : ' + r.email);",
+                  "    console.log('isActive  : ' + r.isActive);",
+                  "    console.log('licenseType: ' + r.licenseType);",
+                  "    console.log('');",
+                  "    if (r.isActive === false) {",
+                  "        console.log('THIS RESOURCE IS INACTIVE.');",
+                  "        console.log('A webhook owned by an inactive resource can stop dispatching while still');",
+                  "        console.log('reporting isActive: true on the webhook itself. Strong candidate.');",
+                  "    } else {",
+                  "        console.log('Owner is active - this is not the cause.');",
+                  "    }",
+                  "}",
+                  "",
+                  "pm.test('Owner resource is active', function () {",
+                  "    const j = pm.response.json();",
+                  "    const r = j.item || (j.items && j.items[0]) || j;",
+                  "    pm.expect(r.isActive, 'the webhook owner is inactive').to.not.equal(false);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Update webhook URLs",
           "request": {
             "method": "PATCH",
@@ -857,6 +920,11 @@
     },
     {
       "key": "syncFlagUdfFieldId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ownerResourceId",
       "value": "",
       "type": "string"
     }
