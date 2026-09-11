@@ -9,6 +9,13 @@ $SyncFlagUdfLabel   = $env:AutotaskSyncFlagUdfLabel
 # means don't sync, so a company is never synced by accident.
 $AffirmativeValues = @("yes", "y", "true", "1", "on", "checked")
 
+# A PICKLIST UDF sends the id of the selected value, not its label, so the id
+# meaning "yes" has to be configured (comma separated).
+foreach ($v in ("$($env:AutotaskSyncFlagYesValues)" -split ",")) {
+    $v = $v.Trim().ToLower()
+    if ($v) { $AffirmativeValues += $v }
+}
+
 # Your aBILLity instance decides this host - override with the AbillityApiBase
 # app setting if yours differs.
 $ApiBase = $env:AbillityApiBase
@@ -19,10 +26,21 @@ $Payload      = $Request.Body
 $StatusCode   = [HttpStatusCode]::OK
 $ResponseBody = "ok"
 
-if ($Payload.EntityType -eq "Company" -and $Payload.Action -eq "Update") {
+# Autotask names this entity "Account" on the wire, even though the UI and the
+# API entity are both "Company".
+$EntityType = "$($Payload.EntityType)".ToLower()
+$Action     = "$($Payload.Action)".ToLower()
 
+if (($EntityType -eq "account" -or $EntityType -eq "company") -and $Action -eq "update") {
+
+    # Autotask sends Fields as an object keyed by field name; the older shape was
+    # an array of {name, value}. Accept both.
     $FieldsMap = @{}
-    foreach ($f in $Payload.Fields) { $FieldsMap[$f.name] = $f.value }
+    if ($Payload.Fields -is [System.Array]) {
+        foreach ($f in $Payload.Fields) { $FieldsMap[$f.name] = $f.value }
+    } elseif ($Payload.Fields) {
+        foreach ($p in $Payload.Fields.PSObject.Properties) { $FieldsMap[$p.Name] = $p.Value }
+    }
 
     $NewName    = $FieldsMap["CompanyName"]
     $SyncFlag   = $FieldsMap[$SyncFlagUdfLabel]

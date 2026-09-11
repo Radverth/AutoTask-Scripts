@@ -895,7 +895,7 @@
     },
     {
       "key": "syncFlagUdfLabel",
-      "value": "Sync with aBillity (yes or no)",
+      "value": "Sync with aBillity",
       "type": "string"
     },
     {

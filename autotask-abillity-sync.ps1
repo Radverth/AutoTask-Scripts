@@ -26,7 +26,7 @@ $NotificationEmail  = "you@yourdomain.com"
 # --- The exact labels of your two Company UDFs ---
 # These must match Autotask character for character, capitals included.
 $AbillityIdUdfLabel = "aBillity Company ID"
-$SyncFlagUdfLabel   = "Sync with aBillity (yes or no)"
+$SyncFlagUdfLabel   = "Sync with aBillity"
 
 # What the sync-flag UDF can say for "yes". Anything else - including blank -
 # means don't sync, so a company is never synced by accident.

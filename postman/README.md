@@ -57,7 +57,7 @@ One-time setup. Registers the webhook that fires when a company name changes, an
 | `deactivationUrl` | `https://<worker>.workers.dev/api/CompanyNameSyncDeactivated?code=<WebhookToken>` |
 | `notificationEmail` | where Autotask emails if the webhook starts failing |
 | `abillityIdUdfLabel` | defaults to `aBillity Company ID` |
-| `syncFlagUdfLabel` | defaults to `Sync with aBillity (yes or no)` |
+| `syncFlagUdfLabel` | defaults to `Sync with aBillity` |
 | `ownerResourceId` | the webhook's `ownerResourceID` — from *List webhooks* |
 
 **Filled in for you — leave blank:**
@@ -525,11 +525,13 @@ Health-checks the Worker and fires simulated webhooks at it. No Autotask involve
 |---|---|
 | `workerBaseUrl` | `https://<worker>.workers.dev` — **no trailing slash** |
 | `webhookToken` | the `WebhookToken` secret set on the Worker |
-| `syncFlagUdfLabel` | defaults to `Sync with aBillity (yes or no)` |
+| `syncFlagUdfLabel` | defaults to `Sync with aBillity` |
 | `abillityIdUdfLabel` | defaults to `aBillity Company ID` |
 | `testAutotaskCompanyId` | defaults to `12345` |
 | `testAbillityCompanyId` | a real aBILLity company id — request 4 renames it |
 | `testNewName` | defaults to `Worker Test - safe to rename back` |
+| `syncFlagYesValue` | *(see the requests below)* |
+| `syncFlagNoValue` | defaults to `not-a-yes-value` |
 
 ## Headers
 
@@ -593,11 +595,11 @@ curl -X GET '{{workerBaseUrl}}/health?code=deliberately-wrong'
 
 ### 3. Simulate a webhook - NOT flagged for sync (safe) — **WRITES LIVE DATA**
 
-Sends a webhook-shaped payload with the sync flag set to No.
+Sends a real-shaped Autotask payload with the sync flag set to a value that is NOT your yes value.
 
 Safe: the Worker should skip it, so NOTHING is written to aBILLity. It still exercises routing, the token check, JSON parsing and the flag logic.
 
-Run this before request 4.
+This is the payload shape Autotask actually sends - EntityType "Account", Fields as an object, and the flag as a picklist value id.
 
 Expect 200, and in the Worker log:  
   Request: POST /api/CompanyNameSync  
@@ -613,23 +615,18 @@ Expect 200, and in the Worker log:
 
 ```json
 {
-  "EntityType": "Company",
   "Action": "Update",
+  "Guid": "{{$guid}}",
+  "EntityType": "Account",
   "Id": "{{testAutotaskCompanyId}}",
-  "Fields": [
-    {
-      "name": "CompanyName",
-      "value": "{{testNewName}}"
-    },
-    {
-      "name": "{{syncFlagUdfLabel}}",
-      "value": "No"
-    },
-    {
-      "name": "{{abillityIdUdfLabel}}",
-      "value": "{{testAbillityCompanyId}}"
-    }
-  ]
+  "Fields": {
+    "CompanyName": "{{testNewName}}",
+    "{{abillityIdUdfLabel}}": "{{testAbillityCompanyId}}",
+    "{{syncFlagUdfLabel}}": "{{syncFlagNoValue}}"
+  },
+  "EventTime": "{{$isoTimestamp}}",
+  "SequenceNumber": 1,
+  "PersonId": 0
 }
 ```
 
@@ -638,21 +635,18 @@ Expect 200, and in the Worker log:
 ```bash
 curl -X POST '{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}' \
   -H 'Content-Type: application/json' \
-  -d '{"EntityType":"Company","Action":"Update","Id":"{{testAutotaskCompanyId}}","Fields":[{"name":"CompanyName","value":"{{testNewName}}"},{"name":"{{syncFlagUdfLabel}}","value":"No"},{"name":"{{abillityIdUdfLabel}}","value":"{{testAbillityCompanyId}}"}]}'
+  -d '{"Action":"Update","Guid":"{{$guid}}","EntityType":"Account","Id":"{{testAutotaskCompanyId}}","Fields":{"CompanyName":"{{testNewName}}","{{abillityIdUdfLabel}}":"{{testAbillityCompanyId}}","{{syncFlagUdfLabel}}":"{{syncFlagNoValue}}"},"EventTime":"{{$isoTimestamp}}","SequenceNumber":1,"PersonId":0}'
 ```
 
 ### 4. Simulate a webhook - flagged, real sync (WRITES TO aBILLITY) — **WRITES LIVE DATA**
 
-The same payload with the flag set to Yes, so the Worker performs the real aBILLity rename.
+The same real-shaped payload with the sync flag set to your yes value, so the Worker performs the real aBILLity rename.
 
 > ⚠️ **THIS RENAMES A COMPANY IN aBILLity - LIVE BILLING DATA.**
 
-Set testAbillityCompanyId to a company you are willing to rename, and put the name back afterwards with the aBILLity collection.
+syncFlagYesValue must match what the Worker accepts: for a picklist UDF that is the value's numeric id, and the Worker needs the same id in its AutotaskSyncFlagYesValues variable.
 
-Expect 200 and 'Synced company ... ->' in the Worker log.  
-A 500 with 'sync failed' means the Worker reached aBILLity and aBILLity refused - the log carries the status and body.
-
-NOTE: this proves the Worker and aBILLity work together. It does NOT prove Autotask sends this payload shape - only a real webhook shows that.
+Expect 200 and 'Synced company ... ->' in the Worker log.
 
 **URL**
 
@@ -664,23 +658,18 @@ NOTE: this proves the Worker and aBILLity work together. It does NOT prove Autot
 
 ```json
 {
-  "EntityType": "Company",
   "Action": "Update",
+  "Guid": "{{$guid}}",
+  "EntityType": "Account",
   "Id": "{{testAutotaskCompanyId}}",
-  "Fields": [
-    {
-      "name": "CompanyName",
-      "value": "{{testNewName}}"
-    },
-    {
-      "name": "{{syncFlagUdfLabel}}",
-      "value": "Yes"
-    },
-    {
-      "name": "{{abillityIdUdfLabel}}",
-      "value": "{{testAbillityCompanyId}}"
-    }
-  ]
+  "Fields": {
+    "CompanyName": "{{testNewName}}",
+    "{{abillityIdUdfLabel}}": "{{testAbillityCompanyId}}",
+    "{{syncFlagUdfLabel}}": "{{syncFlagYesValue}}"
+  },
+  "EventTime": "{{$isoTimestamp}}",
+  "SequenceNumber": 1,
+  "PersonId": 0
 }
 ```
 
@@ -689,7 +678,7 @@ NOTE: this proves the Worker and aBILLity work together. It does NOT prove Autot
 ```bash
 curl -X POST '{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}' \
   -H 'Content-Type: application/json' \
-  -d '{"EntityType":"Company","Action":"Update","Id":"{{testAutotaskCompanyId}}","Fields":[{"name":"CompanyName","value":"{{testNewName}}"},{"name":"{{syncFlagUdfLabel}}","value":"Yes"},{"name":"{{abillityIdUdfLabel}}","value":"{{testAbillityCompanyId}}"}]}'
+  -d '{"Action":"Update","Guid":"{{$guid}}","EntityType":"Account","Id":"{{testAutotaskCompanyId}}","Fields":{"CompanyName":"{{testNewName}}","{{abillityIdUdfLabel}}":"{{testAbillityCompanyId}}","{{syncFlagUdfLabel}}":"{{syncFlagYesValue}}"},"EventTime":"{{$isoTimestamp}}","SequenceNumber":1,"PersonId":0}'
 ```
 
 ### 5. Simulate the deactivation callback — **WRITES LIVE DATA**

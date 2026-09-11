@@ -11,6 +11,20 @@
  * reads yes, and the ID UDF holds an aBILLity Company ID. Anything else is
  * skipped and logged.
  *
+ * The payload Autotask actually sends:
+ *
+ *   {
+ *     "Action": "Update",
+ *     "EntityType": "Account",          <- Account, not Company
+ *     "Id": 1301,
+ *     "Fields": {                       <- an object, not an array
+ *       "CompanyName": "Acme Ltd",
+ *       "aBillity Company ID": "97",
+ *       "Sync with aBillity": "29683107" <- a picklist VALUE id, not "Yes"
+ *     },
+ *     "EventTime": "...", "SequenceNumber": 32, "PersonId": 29682945
+ *   }
+ *
  * Azure Functions authenticate callers with a built-in `?code=` key. Workers
  * have no equivalent, so we check the same-shaped `?code=` against the
  * WebhookToken secret ourselves.
@@ -135,7 +149,12 @@ async function handleCompanyNameSync(request, env) {
     return text(400, "invalid json");
   }
 
-  if (payload?.EntityType !== "Company" || payload?.Action !== "Update") {
+  // Autotask names this entity "Account" on the wire, even though the UI and the
+  // API entity are both "Company". Accept either.
+  const entityType = String(payload?.EntityType ?? "").toLowerCase();
+  const action = String(payload?.Action ?? "").toLowerCase();
+
+  if ((entityType !== "account" && entityType !== "company") || action !== "update") {
     console.log(
       `Ignoring payload: EntityType=${JSON.stringify(payload?.EntityType)} ` +
         `Action=${JSON.stringify(payload?.Action)} (wanted "Company"/"Update"). ` +
@@ -144,9 +163,7 @@ async function handleCompanyNameSync(request, env) {
     return text(200, "ok");
   }
 
-  const fields = new Map(
-    (payload.Fields ?? []).map((field) => [field.name, field.value])
-  );
+  const fields = toFieldMap(payload.Fields);
 
   let newName = fields.get("CompanyName");
   const syncFlag = fields.get(env.AutotaskSyncFlagUdfLabel);
@@ -162,10 +179,24 @@ async function handleCompanyNameSync(request, env) {
     return text(200, "ok");
   }
 
-  if (!isAffirmative(syncFlag)) {
+  const configuredYes = configuredYesValues(env);
+
+  if (!isAffirmative(syncFlag, configuredYes)) {
+    const raw = String(syncFlag ?? "");
+    let hint = "";
+
+    // A picklist UDF sends the id of the chosen value. Nobody can guess which id
+    // means yes, so say so rather than skipping silently.
+    if (/^\d{4,}$/.test(raw.trim())) {
+      hint =
+        ` - that looks like a picklist value id rather than a yes/no. If ${raw.trim()}` +
+        ` is your "yes" value, add it to the AutotaskSyncFlagYesValues variable` +
+        ` (comma separated) and redeploy.`;
+    }
+
     console.log(
       `Autotask company ${payload.Id} is not flagged for aBILLity sync ` +
-        `("${env.AutotaskSyncFlagUdfLabel}" = "${syncFlag ?? ""}") - skipping`
+        `("${env.AutotaskSyncFlagUdfLabel}" = "${raw}")${hint} - skipping`
     );
     return text(200, "ok");
   }
@@ -241,11 +272,45 @@ async function handleDeactivated(request) {
   return text(200, "ok");
 }
 
-/** True only for an explicit yes - a checkbox tick, or Yes/True/1/On as text. */
-function isAffirmative(value) {
+/**
+ * Autotask sends Fields as an object keyed by field name. Older payloads (and the
+ * PowerShell this was ported from) used an array of {name, value}. Accept both.
+ */
+function toFieldMap(fields) {
+  if (Array.isArray(fields)) {
+    return new Map(fields.map((field) => [field.name, field.value]));
+  }
+  if (fields && typeof fields === "object") {
+    return new Map(Object.entries(fields));
+  }
+  return new Map();
+}
+
+/**
+ * True only for an explicit yes.
+ *
+ * A checkbox or text UDF sends Yes/True/1/On. A PICKLIST UDF sends the numeric id
+ * of the selected value, not its label - so the id meaning "yes" has to be
+ * configured, in AutotaskSyncFlagYesValues (comma separated).
+ */
+function isAffirmative(value, configuredYes) {
   if (value === true) return true;
   if (value === null || value === undefined) return false;
-  return AFFIRMATIVE_VALUES.has(String(value).trim().toLowerCase());
+
+  const text = String(value).trim().toLowerCase();
+  if (!text) return false;
+
+  return configuredYes.has(text) || AFFIRMATIVE_VALUES.has(text);
+}
+
+/** The extra values that count as yes, from AutotaskSyncFlagYesValues. */
+function configuredYesValues(env) {
+  return new Set(
+    String(env.AutotaskSyncFlagYesValues ?? "")
+      .split(",")
+      .map((v) => v.trim().toLowerCase())
+      .filter(Boolean)
+  );
 }
 
 function text(status, body) {

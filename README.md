@@ -14,7 +14,7 @@ The sync reads two Company user-defined fields in Autotask. Both must be right f
 
 | UDF label | What it holds | What it does |
 |---|---|---|
-| `Sync with aBillity (yes or no)` | `Yes` or `No` | The on switch. Anything other than yes — including blank — means this company is left alone. |
+| `Sync with aBillity` | `Yes` / `No`, or a picklist selection | The on switch. Anything other than yes — including blank — means this company is left alone. **If it's a picklist**, Autotask sends the selected value's numeric id rather than its label, so that id must go in `AutotaskSyncFlagYesValues`. The log names the id it saw. |
 | `aBillity Company ID` | the company's aBILLity ID | Where the update gets sent. |
 
 So a name change syncs only when the flag says yes **and** an aBILLity ID is present. Everything else is skipped and written to the log, never treated as an error. `Yes`, `yes`, `Y`, `True`, `1`, `On` and a ticked checkbox all count as yes; anything else counts as no.
@@ -48,7 +48,7 @@ In Autotask: **Admin → Features & Settings → Companies & Contacts → Compan
 Confirm both of these exist and write down their labels **exactly** as they appear — capitals, spaces and brackets included. `aBillity Company ID` and `abillity company id` are different fields as far as this sync is concerned.
 
 - `aBillity Company ID`
-- `Sync with aBillity (yes or no)`
+- `Sync with aBillity`
 
 If your labels differ even slightly from the two above, use your real ones everywhere below.
 
@@ -97,8 +97,9 @@ You'll see an error in the editor's preview pane — that's expected. The Worker
 | Type | Variable name | Value |
 |---|---|---|
 | Text | `AutotaskAbillityIdUdfLabel` | `aBillity Company ID` |
-| Text | `AutotaskSyncFlagUdfLabel` | `Sync with aBillity (yes or no)` |
+| Text | `AutotaskSyncFlagUdfLabel` | `Sync with aBillity` |
 | Text | `AbillityApiBase` | *optional* — only if your aBILLity API host isn't `https://api-billing.abillity.co.uk/api` |
+| Text | `AutotaskSyncFlagYesValues` | *required for a picklist sync flag* — the value id(s) that mean yes, comma separated |
 
 These are your two UDF labels from step 1, character for character. Get one wrong and that field simply reads as blank — for the sync flag that means every company is skipped, silently.
 
@@ -221,12 +222,38 @@ https://autotask-abillity-sync.<your-subdomain>.workers.dev/health?code=<YOUR_WE
 
 It reports only *whether* each setting is present, never its value.
 
+### What Autotask actually sends
+
+Captured from a live webhook, because it differs from what you'd expect:
+
+```json
+{
+  "Action": "Update",
+  "EntityType": "Account",
+  "Id": 1301,
+  "Fields": {
+    "CompanyName": "Acme Ltd",
+    "aBillity Company ID": "97",
+    "Sync with aBillity": "29683107"
+  },
+  "EventTime": "...", "SequenceNumber": 32, "PersonId": 29682945
+}
+```
+
+Three things worth knowing:
+
+- **`EntityType` is `Account`**, not `Company` — the entity is called Company everywhere else.
+- **`Fields` is an object** keyed by field name, not an array of `{name, value}`.
+- **A picklist UDF sends the selected value's numeric id**, not its label. `"29683107"` is not the word "Yes". Put that id in `AutotaskSyncFlagYesValues`, or the company is skipped as unflagged. The log tells you the id it saw.
+
+The Worker accepts both `Account` and `Company`, and both the object and array shapes.
+
 ### What you'll see
 
 | Log line | Meaning |
 |---|---|
 | `Synced company <id> -> '<name>'` | Worked. |
-| `... is not flagged for aBILLity sync ("Sync with aBillity (yes or no)" = "No")` | Normal skip — the flag isn't yes. |
+| `... is not flagged for aBILLity sync ("Sync with aBillity" = "No")` | Normal skip — the flag isn't yes. |
 | `... is flagged for sync but has no "aBillity Company ID"` | **Warning.** Someone switched this company on but left the ID blank. |
 | `aBILLity PATCH failed for company <id>: <status>` | **Error.** Reached aBILLity, which refused. Status and body are included. |
 | `Missing configuration: ...` | A variable or secret from step 2.4/2.5 isn't set. |
@@ -242,7 +269,7 @@ That last row is now meaningful: every request logs its arrival before anything 
 
 ## Step 6 — Test it
 
-1. Pick a test company in Autotask. Set `Sync with aBillity (yes or no)` to **Yes** and put a real aBILLity ID in `aBillity Company ID`.
+1. Pick a test company in Autotask. Set `Sync with aBillity` to **Yes** and put a real aBILLity ID in `aBillity Company ID`.
 2. Start the log stream (above) **before** you make the change — a live tail won't show you anything retrospectively.
 3. Change that company's name — in the Autotask UI, or by importing [`postman/autotask-company-update.postman_collection.json`](postman/autotask-company-update.postman_collection.json) and running requests 0 → 4. That collection finds a company, shows its UDF values, renames it, and puts the name back.
 4. Within a minute or so you should see `Synced company <id> -> '<new name>'`.
@@ -295,7 +322,7 @@ Both `CompanyNameSync` and `CompanyNameSyncDeactivated` will appear as functions
 | Name | Value |
 |---|---|
 | `AutotaskAbillityIdUdfLabel` | `aBillity Company ID` |
-| `AutotaskSyncFlagUdfLabel` | `Sync with aBillity (yes or no)` |
+| `AutotaskSyncFlagUdfLabel` | `Sync with aBillity` |
 | `AbillitySystemInformation` | from your aBILLity account |
 | `AbillityUserName` | your aBILLity API username |
 | `AbillityPassword` | your aBILLity API password |
@@ -447,7 +474,7 @@ Note that if this fires, the webhook has already been created. Either fix the la
 
 **Nothing syncs, but no errors anywhere**
 
-Check the company's `Sync with aBillity (yes or no)` UDF actually says yes. A blank flag is a deliberate skip, and it's logged rather than raised as an error.
+Check the company's `Sync with aBillity` UDF actually says yes. A blank flag is a deliberate skip, and it's logged rather than raised as an error.
 
 ---
 

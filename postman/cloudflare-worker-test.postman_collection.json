@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Cloudflare Worker - health and webhook simulation",
-    "description": "Tests the Worker directly. Requests 1, 2, 3 and 5 involve no Autotask and write nothing anywhere, so they work even while the Autotask side is blocked.\n\nSETUP\n  workerBaseUrl        https://autotask-abillity-sync.<your-subdomain>.workers.dev\n                       (no trailing slash)\n  webhookToken         the WebhookToken secret you set on the Worker\n  syncFlagUdfLabel     must match the Worker's AutotaskSyncFlagUdfLabel exactly\n  abillityIdUdfLabel   must match the Worker's AutotaskAbillityIdUdfLabel exactly\n  testAutotaskCompanyId  any number - only appears in log lines\n  testAbillityCompanyId  a real aBILLity company id, used by request 4\n  testNewName          the name request 4 will set\n\nORDER\n  1 health check          - is the Worker live and configured?\n  2 wrong token           - does it reject properly? (401 is the pass)\n  3 simulate, not flagged - safe, writes nothing\n  4 simulate, flagged     - WRITES TO aBILLity\n  5 deactivation callback - logs only\n\nOpen the Worker's log stream first (Cloudflare > your Worker > Logs > Begin log\nstream). These requests are only half the story - the log is the other half.\n\nIMPORTANT: requests 3 and 4 send the payload shape the Worker expects. Passing them\nproves the Worker and aBILLity work together. It does NOT prove Autotask sends that\nshape - only a real webhook does that, and the Worker logs what actually arrives.",
+    "description": "Tests the Worker directly. Requests 1, 2, 3 and 5 involve no Autotask and write nothing anywhere, so they work even while the Autotask side is blocked.\n\nSETUP\n  workerBaseUrl        https://autotask-abillity-sync.<your-subdomain>.workers.dev\n                       (no trailing slash)\n  webhookToken         the WebhookToken secret you set on the Worker\n  syncFlagUdfLabel     must match the Worker's AutotaskSyncFlagUdfLabel exactly\n  abillityIdUdfLabel   must match the Worker's AutotaskAbillityIdUdfLabel exactly\n  testAutotaskCompanyId  any number - only appears in log lines\n  testAbillityCompanyId  a real aBILLity company id, used by request 4\n  testNewName          the name request 4 will set\n\nORDER\n  1 health check          - is the Worker live and configured?\n  2 wrong token           - does it reject properly? (401 is the pass)\n  3 simulate, not flagged - safe, writes nothing\n  4 simulate, flagged     - WRITES TO aBILLity\n  5 deactivation callback - logs only\n\nOpen the Worker's log stream first (Cloudflare > your Worker > Logs > Begin log\nstream). These requests are only half the story - the log is the other half.\n\nRequests 3 and 4 send the payload shape Autotask really sends, captured from a live\nwebhook: EntityType \"Account\", Fields as an object keyed by field name, and a picklist\nUDF carrying the selected value's numeric id rather than its label.\n\nsyncFlagYesValue must be the picklist value id that means yes, and the Worker needs the\nsame id in its AutotaskSyncFlagYesValues variable.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -80,10 +80,10 @@
         "url": {
           "raw": "{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}"
         },
-        "description": "Sends a webhook-shaped payload with the sync flag set to No.\n\nSafe: the Worker should skip it, so NOTHING is written to aBILLity. It still exercises routing, the token check, JSON parsing and the flag logic.\n\nRun this before request 4.\n\nExpect 200, and in the Worker log:\n  Request: POST /api/CompanyNameSync\n  ... is not flagged for aBILLity sync ... - skipping",
+        "description": "Sends a real-shaped Autotask payload with the sync flag set to a value that is NOT your yes value.\n\nSafe: the Worker should skip it, so NOTHING is written to aBILLity. It still exercises routing, the token check, JSON parsing and the flag logic.\n\nThis is the payload shape Autotask actually sends - EntityType \"Account\", Fields as an object, and the flag as a picklist value id.\n\nExpect 200, and in the Worker log:\n  Request: POST /api/CompanyNameSync\n  ... is not flagged for aBILLity sync ... - skipping",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"EntityType\": \"Company\",\n  \"Action\": \"Update\",\n  \"Id\": \"{{testAutotaskCompanyId}}\",\n  \"Fields\": [\n    {\n      \"name\": \"CompanyName\",\n      \"value\": \"{{testNewName}}\"\n    },\n    {\n      \"name\": \"{{syncFlagUdfLabel}}\",\n      \"value\": \"No\"\n    },\n    {\n      \"name\": \"{{abillityIdUdfLabel}}\",\n      \"value\": \"{{testAbillityCompanyId}}\"\n    }\n  ]\n}",
+          "raw": "{\n  \"Action\": \"Update\",\n  \"Guid\": \"{{$guid}}\",\n  \"EntityType\": \"Account\",\n  \"Id\": \"{{testAutotaskCompanyId}}\",\n  \"Fields\": {\n    \"CompanyName\": \"{{testNewName}}\",\n    \"{{abillityIdUdfLabel}}\": \"{{testAbillityCompanyId}}\",\n    \"{{syncFlagUdfLabel}}\": \"{{syncFlagNoValue}}\"\n  },\n  \"EventTime\": \"{{$isoTimestamp}}\",\n  \"SequenceNumber\": 1,\n  \"PersonId\": 0\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -119,10 +119,10 @@
         "url": {
           "raw": "{{workerBaseUrl}}/api/CompanyNameSync?code={{webhookToken}}"
         },
-        "description": "The same payload with the flag set to Yes, so the Worker performs the real aBILLity rename.\n\n*** THIS RENAMES A COMPANY IN aBILLity - LIVE BILLING DATA. ***\n\nSet testAbillityCompanyId to a company you are willing to rename, and put the name back afterwards with the aBILLity collection.\n\nExpect 200 and 'Synced company ... ->' in the Worker log.\nA 500 with 'sync failed' means the Worker reached aBILLity and aBILLity refused - the log carries the status and body.\n\nNOTE: this proves the Worker and aBILLity work together. It does NOT prove Autotask sends this payload shape - only a real webhook shows that.",
+        "description": "The same real-shaped payload with the sync flag set to your yes value, so the Worker performs the real aBILLity rename.\n\n*** THIS RENAMES A COMPANY IN aBILLity - LIVE BILLING DATA. ***\n\nsyncFlagYesValue must match what the Worker accepts: for a picklist UDF that is the value's numeric id, and the Worker needs the same id in its AutotaskSyncFlagYesValues variable.\n\nExpect 200 and 'Synced company ... ->' in the Worker log.",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"EntityType\": \"Company\",\n  \"Action\": \"Update\",\n  \"Id\": \"{{testAutotaskCompanyId}}\",\n  \"Fields\": [\n    {\n      \"name\": \"CompanyName\",\n      \"value\": \"{{testNewName}}\"\n    },\n    {\n      \"name\": \"{{syncFlagUdfLabel}}\",\n      \"value\": \"Yes\"\n    },\n    {\n      \"name\": \"{{abillityIdUdfLabel}}\",\n      \"value\": \"{{testAbillityCompanyId}}\"\n    }\n  ]\n}",
+          "raw": "{\n  \"Action\": \"Update\",\n  \"Guid\": \"{{$guid}}\",\n  \"EntityType\": \"Account\",\n  \"Id\": \"{{testAutotaskCompanyId}}\",\n  \"Fields\": {\n    \"CompanyName\": \"{{testNewName}}\",\n    \"{{abillityIdUdfLabel}}\": \"{{testAbillityCompanyId}}\",\n    \"{{syncFlagUdfLabel}}\": \"{{syncFlagYesValue}}\"\n  },\n  \"EventTime\": \"{{$isoTimestamp}}\",\n  \"SequenceNumber\": 1,\n  \"PersonId\": 0\n}",
           "options": {
             "raw": {
               "language": "json"
@@ -207,7 +207,7 @@
     },
     {
       "key": "syncFlagUdfLabel",
-      "value": "Sync with aBillity (yes or no)",
+      "value": "Sync with aBillity",
       "type": "string"
     },
     {
@@ -228,6 +228,16 @@
     {
       "key": "testNewName",
       "value": "Worker Test - safe to rename back",
+      "type": "string"
+    },
+    {
+      "key": "syncFlagYesValue",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "syncFlagNoValue",
+      "value": "not-a-yes-value",
       "type": "string"
     }
   ]

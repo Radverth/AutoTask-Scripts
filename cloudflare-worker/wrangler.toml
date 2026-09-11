@@ -7,4 +7,4 @@ compatibility_date = "2026-09-09"
 # Everything else is set with `wrangler secret put`.
 [vars]
 AutotaskAbillityIdUdfLabel = "aBillity Company ID"
-AutotaskSyncFlagUdfLabel = "Sync with aBillity (yes or no)"
+AutotaskSyncFlagUdfLabel = "Sync with aBillity"

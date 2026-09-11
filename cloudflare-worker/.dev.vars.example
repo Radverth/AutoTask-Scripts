@@ -7,4 +7,4 @@ WebhookToken = "<A_LONG_RANDOM_STRING>"
 
 # Also readable from wrangler.toml [vars] - override here for local testing.
 AutotaskAbillityIdUdfLabel = "aBillity Company ID"
-AutotaskSyncFlagUdfLabel = "Sync with aBillity (yes or no)"
+AutotaskSyncFlagUdfLabel = "Sync with aBillity"
