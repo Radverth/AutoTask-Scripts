@@ -98,6 +98,7 @@ You'll see an error in the editor's preview pane — that's expected. The Worker
 |---|---|---|
 | Text | `AutotaskAbillityIdUdfLabel` | `aBillity Company ID` |
 | Text | `AutotaskSyncFlagUdfLabel` | `Sync with aBillity (yes or no)` |
+| Text | `AbillityApiBase` | *optional* — only if your aBILLity API host isn't `https://api-billing.abillity.co.uk/api` |
 
 These are your two UDF labels from step 1, character for character. Get one wrong and that field simply reads as blank — for the sync flag that means every company is skipped, silently.
 
@@ -315,7 +316,9 @@ To watch it run: Function App → **CompanyNameSync** → **Monitor**.
 
 If a sync doesn't work, it helps to know which half is broken. These test aBILLity directly — no Autotask, no Cloudflare.
 
-All of it is checked against [aBILLity's published API](https://api.abillity.co.uk/GettingStarted): `PATCH api/company/{id}` updates selected details (`PUT` would replace *all* of them), `GET api/company/{id}` returns a `CompanyView` with `Name` at the top level, the id is an integer, and `Name` is capped at 50 characters.
+All of it is checked against aBILLity's published API (the `/GettingStarted` page on your own aBILLity API host): `PATCH api/company/{id}` updates selected details (`PUT` would replace *all* of them), `GET api/company/{id}` returns a `CompanyView` with `Name` at the top level, the id is an integer, and `Name` is capped at 50 characters.
+
+> **The API host differs between aBILLity instances.** The default is `https://api-billing.abillity.co.uk/api`; set the `AbillityApiBase` variable on the Worker if yours differs. A wrong host gives unexplained 500s rather than a clean error, so check the `/GettingStarted` page on *your* instance rather than assuming.
 
 > **These write to live billing data.** Request 2 / `-NewName` genuinely renames a company in aBILLity. Use one you're willing to rename, and restore it afterwards. The read step alone is enough to check credentials and a company id.
 

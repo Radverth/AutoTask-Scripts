@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "aBILLity API test",
-    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nChecked against api.abillity.co.uk/GettingStarted: GET returns a CompanyView with Name at\nthe top level, PATCH updates selected details, PUT would replace ALL details, and the id is\nan integer. Name is limited to 50 characters.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  0 checks the credentials against /site, the endpoint aBILLity's own examples use.\n    Run it first when anything is failing - it isolates auth from the company endpoint.\n  1 reads the company - name, LastUpdated, flags and dates - and stores the name.\n    Read-only. Run this alone whenever you just want to check what aBILLity holds.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
+    "description": "Tests the aBILLity half of the company name sync on its own - credentials, company id, and the rename the Worker performs - with no Autotask or Cloudflare involved.\n\nNOTE: the API host differs between aBILLity instances - abillityApiBase defaults to\nhttps://api-billing.abillity.co.uk/api but check the GettingStarted page on your own\naBILLity API host. A wrong host gives unexplained 500s.\n\nChecked against that documentation: GET returns a CompanyView with Name at\nthe top level, PATCH updates selected details, PUT would replace ALL details, and the id is\nan integer. Name is limited to 50 characters.\n\nSETUP\n  Variables tab: systemInformation, abillityUserName, abillityPassword, companyId, and testName.\n\nORDER\n  0 checks the credentials against /site, the endpoint aBILLity's own examples use.\n    Run it first when anything is failing - it isolates auth from the company endpoint.\n  1 reads the company - name, LastUpdated, flags and dates - and stores the name.\n    Read-only. Run this alone whenever you just want to check what aBILLity holds.\n  2 renames it. THIS WRITES TO LIVE BILLING DATA.\n  3 puts the original name back.\n\nRun 1 before 2, and 3 straight after, on a company you are willing to rename. If you only want to check the credentials, run 1 and stop.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -28,7 +28,7 @@
           }
         ],
         "url": {
-          "raw": "https://api.abillity.co.uk/api/site"
+          "raw": "{{abillityApiBase}}/site"
         },
         "description": "The endpoint every example in aBILLity's own docs uses. Run it FIRST when something is wrong - it separates 'my credentials/headers are wrong' from 'something is wrong with the company endpoint'.\n\nRead-only.\n\nNote there is no Content-Type header here. This is a GET with no body, and sending Content-Type on a bodyless request upsets some ASP.NET stacks.\n\n200 - auth works. The problem is elsewhere.\n401 - credentials or permissions.\n500 - aBILLity threw an unhandled error. Most often SystemInformation is wrong or missing, since that is what selects which system to connect to - a bad value can fail inside the API rather than come back as a clean 401."
       },
@@ -96,7 +96,7 @@
           }
         ],
         "url": {
-          "raw": "https://api.abillity.co.uk/api/company/{{companyId}}"
+          "raw": "{{abillityApiBase}}/company/{{companyId}}"
         },
         "description": "GET api/company/{id} - the details of one company. Read-only, changes nothing, so run it as often as you like.\n\nUse it on its own to check what aBILLity currently holds for a company, or before requests 2 and 3 so the original name is captured.\n\nLastUpdated is the useful one when testing the sync: after renaming the company in Autotask, this should show a timestamp of a moment ago. If the name changed but LastUpdated is old, you are looking at the wrong company.\n\n401 = bad credentials OR no company permissions (aBILLity uses 401 for both).\n404 = no such company, or no companies in this database."
       },
@@ -184,7 +184,7 @@
           }
         ],
         "url": {
-          "raw": "https://api.abillity.co.uk/api/company/{{companyId}}"
+          "raw": "{{abillityApiBase}}/company/{{companyId}}"
         },
         "description": "The exact call the Worker makes when an Autotask company is renamed.\n\n*** THIS CHANGES LIVE BILLING DATA. ***\n\nRun request 1 first so the original name is captured, then request 3 to put it back.\n\naBILLity caps the name at 50 characters and the Worker truncates to match - keep {{testName}} under 50 unless you are deliberately testing that.",
         "body": {
@@ -248,7 +248,7 @@
           }
         ],
         "url": {
-          "raw": "https://api.abillity.co.uk/api/company/{{companyId}}"
+          "raw": "{{abillityApiBase}}/company/{{companyId}}"
         },
         "description": "Puts the name back to whatever request 1 captured in {{originalName}}.\n\nIf {{originalName}} is empty, request 1 did not capture it - set the name by hand in aBILLity instead of running this.",
         "body": {
@@ -291,6 +291,11 @@
     }
   ],
   "variable": [
+    {
+      "key": "abillityApiBase",
+      "value": "https://api-billing.abillity.co.uk/api",
+      "type": "string"
+    },
     {
       "key": "systemInformation",
       "value": "",

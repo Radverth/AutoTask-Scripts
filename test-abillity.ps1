@@ -22,7 +22,8 @@
     THIS WRITES TO LIVE BILLING DATA. Use a company you are willing to rename,
     and let it restore the original name when it offers.
 
-    Checked against aBILLity's published API (api.abillity.co.uk/GettingStarted):
+    Checked against aBILLity's published API (the GettingStarted page on your
+    own aBILLity API host - note the host differs between instances):
       GET   api/company/{id}  returns a CompanyView with Name at the top level
       PATCH api/company/{id}  updates selected details    <- what the Worker uses
       PUT   api/company/{id}  updates ALL details         <- would blank other fields
@@ -47,12 +48,16 @@ param(
     [string] $NewName,
 
     # Use if aBILLity has no GET for a single company - skips the read step.
-    [switch] $SkipRead
+    [switch] $SkipRead,
+
+    # Your aBILLity instance decides this host. Check the GettingStarted page on
+    # your own aBILLity API host if calls fail with unexplained 500s.
+    [string] $ApiBase = "https://api-billing.abillity.co.uk/api"
 )
 
 $ErrorActionPreference = "Stop"
 
-$ApiBase = "https://api.abillity.co.uk/api"
+$ApiBase = $ApiBase.TrimEnd('/')
 
 # aBILLity caps Company Name at 50 characters - the Worker truncates to match.
 $NameMaxLength = 50

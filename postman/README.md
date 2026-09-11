@@ -4,6 +4,8 @@ Four collections, each standalone. **Import → File.**
 
 Every request below is laid out to copy straight out: the URL, the headers, the body, and a cURL you can paste into Postman's import box to build the request without typing anything.
 
+> **The aBILLity API host differs between instances.** `abillityApiBase` defaults to `https://api-billing.abillity.co.uk/api`. Check the `/GettingStarted` page on your own aBILLity API host — a wrong host gives unexplained 500s, not a clean error.
+
 ## Which one do I want?
 
 | Collection | What it's for | When |
@@ -15,22 +17,20 @@ Every request below is laid out to copy straight out: the URL, the headers, the 
 
 ## Building a request by pasting
 
-Postman turns a cURL command into a request for you:
-
 1. **Import → Raw text**
 2. Paste the `curl ...` block from any request below
 3. **Continue → Import**
 
-The `{{variables}}` come through intact, so the new request picks up whatever you've set on the Variables tab.
+The `{{variables}}` come through intact.
 
 ## Before you start
 
-1. **Open the console** — **View → Show Postman Console.** Most requests log what they found or captured.
-2. **Authorization tab must be "No Auth".** Both APIs authenticate with plain headers; anything else adds a competing header.
+1. **Open the console** — **View → Show Postman Console.**
+2. **Authorization tab must be "No Auth".**
 3. **Fill in variables on the Variables tab, then Save.**
-4. **Leave the captured variables blank** — earlier requests fill them in.
+4. **Leave the captured variables blank.**
 
-> Requests that change live data are marked **WRITES LIVE DATA**. Read-only ones can be run freely.
+> Requests that change live data are marked **WRITES LIVE DATA**.
 
 ---
 
@@ -67,7 +67,7 @@ One-time setup. Registers the webhook that fires when a company name changes, an
 
 ## Headers
 
-Used by every request in this collection except where a request says otherwise:
+Used by every request here except where noted:
 
 ```
 ApiIntegrationcode: {{apiIntegrationCode}}
@@ -92,7 +92,7 @@ If it does not return a url, the username is not a recognised Autotask API user.
 https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}
 ```
 
-**Headers** (different from the collection default above)
+**Headers** (differs from the default above)
 
 ```
 Content-Type: application/json
@@ -502,7 +502,7 @@ Health-checks the Worker and fires simulated webhooks at it. No Autotask involve
 
 ## Headers
 
-Used by every request in this collection except where a request says otherwise:
+Used by every request here except where noted:
 
 ```
 Content-Type: application/json
@@ -524,7 +524,7 @@ Run this before anything else - if it fails, nothing downstream can work.
 {{workerBaseUrl}}/health?code={{webhookToken}}
 ```
 
-**Headers** (different from the collection default above)
+**Headers** (differs from the default above)
 
 ```
 (none)
@@ -548,7 +548,7 @@ A 401 here is the PASS.
 {{workerBaseUrl}}/health?code=deliberately-wrong
 ```
 
-**Headers** (different from the collection default above)
+**Headers** (differs from the default above)
 
 ```
 (none)
@@ -719,7 +719,7 @@ Reads and renames a company through the Autotask API. Renaming is what fires the
 
 ## Headers
 
-Used by every request in this collection except where a request says otherwise:
+Used by every request here except where noted:
 
 ```
 ApiIntegrationcode: {{apiIntegrationCode}}
@@ -742,7 +742,7 @@ Sends NO credentials - safe to run at will.
 https://webservices2.autotask.net/atservicesrest/V1.0/zoneInformation?user={{userName}}
 ```
 
-**Headers** (different from the collection default above)
+**Headers** (differs from the default above)
 
 ```
 Content-Type: application/json
@@ -881,6 +881,7 @@ Talks to aBILLity directly — credentials, company lookup, and the rename the W
 
 | Variable | Set it to |
 |---|---|
+| `abillityApiBase` | defaults to `https://api-billing.abillity.co.uk/api` |
 | `systemInformation` | from your aBILLity administrator. **Not the literal word `SYSTEM`** — that's a placeholder in their docs |
 | `abillityUserName` | your aBILLity API username |
 | `abillityPassword` | your aBILLity API password |
@@ -895,7 +896,7 @@ Talks to aBILLity directly — credentials, company lookup, and the rename the W
 
 ## Headers
 
-Used by every request in this collection except where a request says otherwise:
+Used by every request here except where noted:
 
 ```
 SystemInformation: {{systemInformation}}
@@ -922,10 +923,10 @@ Note there is no Content-Type header here. This is a GET with no body, and sendi
 **URL**
 
 ```
-https://api.abillity.co.uk/api/site
+{{abillityApiBase}}/site
 ```
 
-**Headers** (different from the collection default above)
+**Headers** (differs from the default above)
 
 ```
 SystemInformation: {{systemInformation}}
@@ -937,7 +938,7 @@ Accept: application/json
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X GET 'https://api.abillity.co.uk/api/site' \
+curl -X GET '{{abillityApiBase}}/site' \
   -H 'SystemInformation: {{systemInformation}}' \
   -H 'username: {{abillityUserName}}' \
   -H 'password: {{abillityPassword}}' \
@@ -958,13 +959,13 @@ LastUpdated is the useful one when testing the sync: after renaming the company 
 **URL**
 
 ```
-https://api.abillity.co.uk/api/company/{{companyId}}
+{{abillityApiBase}}/company/{{companyId}}
 ```
 
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X GET 'https://api.abillity.co.uk/api/company/{{companyId}}' \
+curl -X GET '{{abillityApiBase}}/company/{{companyId}}' \
   -H 'SystemInformation: {{systemInformation}}' \
   -H 'username: {{abillityUserName}}' \
   -H 'password: {{abillityPassword}}' \
@@ -985,7 +986,7 @@ aBILLity caps the name at 50 characters and the Worker truncates to match - keep
 **URL**
 
 ```
-https://api.abillity.co.uk/api/company/{{companyId}}
+{{abillityApiBase}}/company/{{companyId}}
 ```
 
 **Body** — raw / JSON
@@ -999,7 +1000,7 @@ https://api.abillity.co.uk/api/company/{{companyId}}
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X PATCH 'https://api.abillity.co.uk/api/company/{{companyId}}' \
+curl -X PATCH '{{abillityApiBase}}/company/{{companyId}}' \
   -H 'SystemInformation: {{systemInformation}}' \
   -H 'username: {{abillityUserName}}' \
   -H 'password: {{abillityPassword}}' \
@@ -1017,7 +1018,7 @@ If {{originalName}} is empty, request 1 did not capture it - set the name by han
 **URL**
 
 ```
-https://api.abillity.co.uk/api/company/{{companyId}}
+{{abillityApiBase}}/company/{{companyId}}
 ```
 
 **Body** — raw / JSON
@@ -1031,7 +1032,7 @@ https://api.abillity.co.uk/api/company/{{companyId}}
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X PATCH 'https://api.abillity.co.uk/api/company/{{companyId}}' \
+curl -X PATCH '{{abillityApiBase}}/company/{{companyId}}' \
   -H 'SystemInformation: {{systemInformation}}' \
   -H 'username: {{abillityUserName}}' \
   -H 'password: {{abillityPassword}}' \
@@ -1046,28 +1047,26 @@ curl -X PATCH 'https://api.abillity.co.uk/api/company/{{companyId}}' \
 
 | Symptom | Cause |
 |---|---|
-| **The webhook never calls the Worker** | Run *Why isn't it firing? 1* — a webhook with no subscribed trigger field fires on nothing. Then check `isActive` with *Get webhook*, and *Why isn't it firing? 3* for an excluded resource. |
-| `500` from aBILLity | Usually `SystemInformation`. **`SYSTEM` is a placeholder in aBILLity's docs, not a value.** |
-| `401` from aBILLity | Bad credentials *or* a user without company permissions. aBILLity uses 401 for both. |
-| `401` from Autotask | Wrong credentials *or* a locked account — indistinguishable. Don't retry repeatedly. |
+| `500` from aBILLity | **Check the host first** — it differs between instances (`api-billing.abillity.co.uk`, not `api.abillity.co.uk`). Then `SystemInformation`, where **`SYSTEM` is a placeholder, not a value**. |
+| **The webhook never calls the Worker** | *Why isn't it firing? 1* — no subscribed trigger field means it fires on nothing. Then `isActive`, then *3 — excluded resources*. |
+| `401` from aBILLity | Bad credentials *or* no company permissions. aBILLity uses 401 for both. |
+| `401` from Autotask | Wrong credentials *or* a locked account. Don't retry repeatedly. |
 | `405` from the Worker | The path didn't match. The log's `Request: GET /...` line shows what arrived. |
-| HTML instead of JSON | The request never reached the API. The URL is wrong, not the credentials. |
-| Autotask `PATCH` seems to do nothing | The id goes in the **body**, not the URL. |
+| HTML instead of JSON | Never reached the API. The URL is wrong, not the credentials. |
+| Autotask `PATCH` does nothing | The id goes in the **body**, not the URL. |
 
 # The webhook isn't firing at all
 
-In order, all read-only:
+All read-only:
 
-1. **Utilities → List webhooks.** Does it exist? Is `isActive` true? Is there more than one?
-2. **Utilities → Why isn't it firing? 1 — trigger fields.** **The most common cause.** Creating the webhook and registering `CompanyName` as its trigger are separate calls; with nothing subscribed it fires on nothing. Fix by running requests 3 then 4.
-3. **Utilities → Why isn't it firing? 3 — excluded resources.** If your API user is excluded, renames made *through the API* don't fire it while UI renames do.
-4. **Try renaming in the Autotask UI** rather than through the API. If the UI fires it and the API doesn't, it's step 3.
-5. **Utilities → Get webhook.** Do `webhookUrl` and `deactivationUrl` match the deployed Worker, `?code=` included?
-6. **Worker → request 1.** Health check: is the Worker live at that URL?
+1. **Utilities → List webhooks.** Exists? `isActive` true? Only one?
+2. **Utilities → Why isn't it firing? 1.** No subscribed trigger field means it fires on nothing.
+3. **Utilities → Why isn't it firing? 3.** An excluded resource means that resource's changes never fire it.
+4. **Cloudflare → Worker → Metrics.** Requests > 0 means it *is* arriving and this is a logging problem.
+5. **Have someone else rename a company** — rules out your own resource being excluded.
 
-# Diagnosing a sync that fires but does nothing
+# It fires but nothing reaches aBILLity
 
-1. **Worker** → request 3 (simulated webhook, not flagged). Routing and parsing work? Writes nothing.
-2. **aBILLity** → request 0 (credentials), then request 1 on the id from the UDF.
-3. **Autotask company update** → requests 0–2. Are both UDFs actually set on the company?
-4. **Utilities → Why isn't it firing? 2 — UDF fields.** Both UDFs registered on the webhook? Without them the payload arrives missing a field and every company is skipped.
+1. **Worker → request 4** (simulated webhook, flagged). Makes the Worker call aBILLity directly. The log shows the exact status and body aBILLity returned.
+2. **aBILLity → request 0.** Credentials and host good?
+3. **Check `AbillityApiBase`** on the Worker matches the host in request 0's URL.

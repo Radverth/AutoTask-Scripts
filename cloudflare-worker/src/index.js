@@ -15,14 +15,18 @@
  * have no equivalent, so we check the same-shaped `?code=` against the
  * WebhookToken secret ourselves.
  *
- * Checked against aBILLity's published API (api.abillity.co.uk/GettingStarted):
+ * Checked against aBILLity's published API (the GettingStarted page on your
+ * own aBILLity API host):
  *   PATCH api/company/{id}  updates selected details   <- what we use
  *   PUT   api/company/{id}  updates ALL details        <- do not use
  *   headers: SystemInformation, username, password
  *   Name: string, 0-50 characters. id: integer.
  */
 
-const ABILLITY_API_BASE = "https://api.abillity.co.uk/api";
+// Your aBILLity instance decides this host. Override with the AbillityApiBase
+// variable if yours differs - hardcoding it is what sent every call to the
+// wrong server and produced unexplained 500s.
+const DEFAULT_ABILLITY_API_BASE = "https://api-billing.abillity.co.uk/api";
 
 // aBILLity caps Company Name at 50 characters.
 const ABILLITY_NAME_MAX_LENGTH = 50;
@@ -81,6 +85,7 @@ export default {
           `settings present: ${REQUIRED_SETTINGS.join(", ")}`,
           `sync flag UDF: "${env.AutotaskSyncFlagUdfLabel}"`,
           `aBILLity id UDF: "${env.AutotaskAbillityIdUdfLabel}"`,
+          `aBILLity API base: ${(env.AbillityApiBase || DEFAULT_ABILLITY_API_BASE).replace(/\/+$/, "")}`,
         ].join("\n")
       );
     }
@@ -191,8 +196,10 @@ async function handleCompanyNameSync(request, env) {
   // PATCH updates selected fields. Do NOT change this to PUT: aBILLity
   // documents PUT as updating ALL details of a company, so a body carrying
   // only Name would blank its flags and dates.
+  const apiBase = (env.AbillityApiBase || DEFAULT_ABILLITY_API_BASE).replace(/\/+$/, "");
+
   const response = await fetch(
-    `${ABILLITY_API_BASE}/company/${encodeURIComponent(abillityId)}`,
+    `${apiBase}/company/${encodeURIComponent(abillityId)}`,
     {
       method: "PATCH",
       headers: {

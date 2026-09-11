@@ -14,6 +14,7 @@ $AutotaskSecret             = "<YOUR_API_USER_SECRET>"
 
 # --- aBILLity ---
 $AbillitySystemInformation  = "<YOUR_SYSTEM_INFORMATION>"
+$AbillityApiBase            = "https://api-billing.abillity.co.uk/api"   # your instance decides this host
 $AbillityUserName           = "<YOUR_ABILLITY_USERNAME>"
 $AbillityPassword           = "<YOUR_ABILLITY_PASSWORD>"
 
@@ -426,7 +427,7 @@ function Sync-CompanyNameToAbillity {
     $PatchBody = @{ Name = $NewName } | ConvertTo-Json
 
     try {
-        Invoke-RestMethod -Uri "https://api.abillity.co.uk/api/company/$AbillityId" `
+        Invoke-RestMethod -Uri "$AbillityApiBase/company/$AbillityId" `
             -Method Patch -Headers $AbillityHeaders -Body $PatchBody
         Write-Host "Synced company $AbillityId -> '$NewName'"
     } catch {

@@ -9,6 +9,12 @@ $SyncFlagUdfLabel   = $env:AutotaskSyncFlagUdfLabel
 # means don't sync, so a company is never synced by accident.
 $AffirmativeValues = @("yes", "y", "true", "1", "on", "checked")
 
+# Your aBILLity instance decides this host - override with the AbillityApiBase
+# app setting if yours differs.
+$ApiBase = $env:AbillityApiBase
+if (-not $ApiBase) { $ApiBase = "https://api-billing.abillity.co.uk/api" }
+$ApiBase = $ApiBase.TrimEnd('/')
+
 $Payload      = $Request.Body
 $StatusCode   = [HttpStatusCode]::OK
 $ResponseBody = "ok"
@@ -45,7 +51,7 @@ if ($Payload.EntityType -eq "Company" -and $Payload.Action -eq "Update") {
         $PatchBody = @{ Name = $NewName } | ConvertTo-Json
 
         try {
-            Invoke-RestMethod -Uri "https://api.abillity.co.uk/api/company/$AbillityId" `
+            Invoke-RestMethod -Uri "$ApiBase/company/$AbillityId" `
                 -Method Patch -Headers $AbillityHeaders -Body $PatchBody
             Write-Host "Synced company $AbillityId -> '$NewName'"
         } catch {
