@@ -356,22 +356,24 @@ curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}' \
 
 ### Why isn't it firing? 1 - trigger fields — *read-only*
 
-Lists the fields registered on the webhook.
+Lists the fields registered on the webhook, by querying CompanyWebhookFields filtered on webhookID.
 
-A webhook with no subscribed field fires on nothing, which looks exactly like a broken endpoint. Creating the webhook (request 2) and registering the trigger (request 4) are separate calls - if request 4 never succeeded, this is your answer.
+A webhook with no subscribed field fires on nothing, which looks exactly like a broken endpoint. Creating the webhook (request 2) and registering the trigger (request 4) are separate calls.
+
+Needs webhookId - a 404 here usually means it is blank.
 
 Read-only.
 
 **URL**
 
 ```
-{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
+{{baseUrl}}/V1.0/CompanyWebhookFields/query?search={"filter":[{"op":"eq","field":"webhookID","value":{{webhookId}}}]}
 ```
 
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}' \
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhookFields/query?search={"filter":[{"op":"eq","field":"webhookID","value":{{webhookId}}}]}' \
   -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
   -H 'UserName: {{userName}}' \
   -H 'Secret: {{secret}}' \
@@ -382,20 +384,22 @@ curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields/query?search=
 
 Lists the UDFs riding along in the payload. There should be two.
 
-This does not stop the webhook firing - it stops the Worker acting on it, which looks different in the log: the request arrives but reports a missing field.
+This does not stop the webhook firing - it stops the Worker acting on it.
+
+Needs webhookId.
 
 Read-only.
 
 **URL**
 
 ```
-{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
+{{baseUrl}}/V1.0/CompanyWebhookUdfFields/query?search={"filter":[{"op":"eq","field":"webhookID","value":{{webhookId}}}]}
 ```
 
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields/query?search={"filter":[{"op":"gte","field":"id","value":0}]}' \
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhookUdfFields/query?search={"filter":[{"op":"eq","field":"webhookID","value":{{webhookId}}}]}' \
   -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
   -H 'UserName: {{userName}}' \
   -H 'Secret: {{secret}}' \
@@ -406,20 +410,22 @@ curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields/query?sear
 
 Lists resources whose changes do NOT fire this webhook.
 
-Autotask can exclude a resource to stop a webhook re-triggering on its own writes. If your API user is excluded, a rename made through the API will not fire the webhook while the same rename made in the UI will - which is exactly the symptom of 'nothing happens when I test with Postman'.
+Autotask can exclude a resource to stop a webhook re-triggering on its own writes.
+
+Needs webhookId.
 
 Read-only.
 
 **URL**
 
 ```
-{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/ExcludedResources/query?search={"filter":[{"op":"gte","field":"id","value":0}]}
+{{baseUrl}}/V1.0/CompanyWebhookExcludedResources/query?search={"filter":[{"op":"eq","field":"webhookID","value":{{webhookId}}}]}
 ```
 
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/ExcludedResources/query?search={"filter":[{"op":"gte","field":"id","value":0}]}' \
+curl -X GET '{{baseUrl}}/V1.0/CompanyWebhookExcludedResources/query?search={"filter":[{"op":"eq","field":"webhookID","value":{{webhookId}}}]}' \
   -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
   -H 'UserName: {{userName}}' \
   -H 'Secret: {{secret}}' \
@@ -428,24 +434,22 @@ curl -X GET '{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/ExcludedResources/qu
 
 ### Why isn't it firing? 4 - the owner resource — *read-only*
 
-Looks up the resource that owns the webhook (its ownerResourceID).
+Looks up the resource that owns the webhook, by its ownerResourceID.
 
-A webhook owned by an inactive, locked or deactivated resource can stop dispatching while still reporting isActive: true - the config looks perfect and nothing is ever sent.
-
-Set ownerResourceId from the webhook's ownerResourceID first.
+Set ownerResourceId from the webhook record first - Utilities > List webhooks shows it.
 
 Read-only.
 
 **URL**
 
 ```
-{{baseUrl}}/V1.0/Resources/{{ownerResourceId}}
+{{baseUrl}}/V1.0/Resources/query?search={"filter":[{"op":"eq","field":"id","value":{{ownerResourceId}}}]}
 ```
 
 **cURL** — paste into Import → Raw text
 
 ```bash
-curl -X GET '{{baseUrl}}/V1.0/Resources/{{ownerResourceId}}' \
+curl -X GET '{{baseUrl}}/V1.0/Resources/query?search={"filter":[{"op":"eq","field":"id","value":{{ownerResourceId}}}]}' \
   -H 'ApiIntegrationcode: {{apiIntegrationCode}}' \
   -H 'UserName: {{userName}}' \
   -H 'Secret: {{secret}}' \

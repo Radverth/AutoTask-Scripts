@@ -550,9 +550,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/Fields/query?search={\"filter\":[{\"op\":\"gte\",\"field\":\"id\",\"value\":0}]}"
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhookFields/query?search={\"filter\":[{\"op\":\"eq\",\"field\":\"webhookID\",\"value\":{{webhookId}}}]}"
             },
-            "description": "Lists the fields registered on the webhook.\n\nA webhook with no subscribed field fires on nothing, which looks exactly like a broken endpoint. Creating the webhook (request 2) and registering the trigger (request 4) are separate calls - if request 4 never succeeded, this is your answer.\n\nRead-only."
+            "description": "Lists the fields registered on the webhook, by querying CompanyWebhookFields filtered on webhookID.\n\nA webhook with no subscribed field fires on nothing, which looks exactly like a broken endpoint. Creating the webhook (request 2) and registering the trigger (request 4) are separate calls.\n\nNeeds webhookId - a 404 here usually means it is blank.\n\nRead-only."
           },
           "event": [
             {
@@ -560,8 +560,15 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "const parent = pm.collectionVariables.get('webhookId');",
+                  "if (!parent) {",
+                  "    console.log('webhookId is EMPTY - that is why this 404s. The URL ends up with a blank id.');",
+                  "    console.log('Re-importing the collection clears it, because it is captured, not typed.');",
+                  "    console.log('Fix: run Utilities > List webhooks, then put the id in webhookId and Save.');",
+                  "}",
+                  "",
                   "const items = (pm.response.json().items) || [];",
-                  "console.log(items.length + ' field(s) registered on webhook ' + pm.collectionVariables.get('webhookId') + ':');",
+                  "console.log(items.length + ' field(s) on webhook ' + parent + ':');",
                   "items.forEach(f => console.log('  fieldID ' + f.fieldID +",
                   "    '  subscribed=' + f.isSubscribedField +",
                   "    '  displayAlways=' + f.isDisplayAlwaysField));",
@@ -607,9 +614,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/UdfFields/query?search={\"filter\":[{\"op\":\"gte\",\"field\":\"id\",\"value\":0}]}"
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhookUdfFields/query?search={\"filter\":[{\"op\":\"eq\",\"field\":\"webhookID\",\"value\":{{webhookId}}}]}"
             },
-            "description": "Lists the UDFs riding along in the payload. There should be two.\n\nThis does not stop the webhook firing - it stops the Worker acting on it, which looks different in the log: the request arrives but reports a missing field.\n\nRead-only."
+            "description": "Lists the UDFs riding along in the payload. There should be two.\n\nThis does not stop the webhook firing - it stops the Worker acting on it.\n\nNeeds webhookId.\n\nRead-only."
           },
           "event": [
             {
@@ -617,16 +624,23 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
+                  "const parent = pm.collectionVariables.get('webhookId');",
+                  "if (!parent) {",
+                  "    console.log('webhookId is EMPTY - that is why this 404s. The URL ends up with a blank id.');",
+                  "    console.log('Re-importing the collection clears it, because it is captured, not typed.');",
+                  "    console.log('Fix: run Utilities > List webhooks, then put the id in webhookId and Save.');",
+                  "}",
+                  "",
                   "const items = (pm.response.json().items) || [];",
-                  "console.log(items.length + ' UDF field(s) registered:');",
+                  "console.log(items.length + ' UDF field(s) on webhook ' + parent + ':');",
                   "items.forEach(f => console.log('  udfFieldID ' + f.udfFieldID +",
                   "    '  subscribed=' + f.isSubscribedField +",
                   "    '  displayAlways=' + f.isDisplayAlwaysField));",
                   "",
                   "if (items.length < 2) {",
                   "    console.log('');",
-                  "    console.log('Expected 2 - the aBILLity id and the sync flag. With fewer, the Worker');",
-                  "    console.log('receives a payload missing one of them and skips every company.');",
+                  "    console.log('Expected 2 - the aBILLity id and the sync flag. With fewer, the payload');",
+                  "    console.log('arrives missing one and the Worker skips every company.');",
                   "    console.log('Run request 5, then 6 and 7.');",
                   "}",
                   "",
@@ -661,9 +675,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/V1.0/CompanyWebhooks/{{webhookId}}/ExcludedResources/query?search={\"filter\":[{\"op\":\"gte\",\"field\":\"id\",\"value\":0}]}"
+              "raw": "{{baseUrl}}/V1.0/CompanyWebhookExcludedResources/query?search={\"filter\":[{\"op\":\"eq\",\"field\":\"webhookID\",\"value\":{{webhookId}}}]}"
             },
-            "description": "Lists resources whose changes do NOT fire this webhook.\n\nAutotask can exclude a resource to stop a webhook re-triggering on its own writes. If your API user is excluded, a rename made through the API will not fire the webhook while the same rename made in the UI will - which is exactly the symptom of 'nothing happens when I test with Postman'.\n\nRead-only."
+            "description": "Lists resources whose changes do NOT fire this webhook.\n\nAutotask can exclude a resource to stop a webhook re-triggering on its own writes.\n\nNeeds webhookId.\n\nRead-only."
           },
           "event": [
             {
@@ -671,22 +685,28 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code === 200) {",
+                  "const parent = pm.collectionVariables.get('webhookId');",
+                  "if (!parent) {",
+                  "    console.log('webhookId is EMPTY - that is why this 404s. The URL ends up with a blank id.');",
+                  "    console.log('Re-importing the collection clears it, because it is captured, not typed.');",
+                  "    console.log('Fix: run Utilities > List webhooks, then put the id in webhookId and Save.');",
+                  "}",
+                  "",
+                  "if (pm.response.code !== 200) {",
+                  "    console.log('HTTP ' + pm.response.code + ' - this Autotask version may not expose');",
+                  "    console.log('CompanyWebhookExcludedResources. Not conclusive either way.');",
+                  "} else {",
                   "    const items = (pm.response.json().items) || [];",
                   "    console.log(items.length + ' excluded resource(s):');",
                   "    items.forEach(r => console.log('  resourceID ' + r.resourceID));",
                   "    if (items.length) {",
                   "        console.log('');",
                   "        console.log('Changes made BY these resources do not fire the webhook.');",
-                  "        console.log('If your API user is listed, renames you make through the API are');",
-                  "        console.log('silently ignored while UI renames still fire. That is the classic');",
-                  "        console.log('loop-prevention setting.');",
+                  "        console.log('If your own resource is listed, your renames are silently ignored');",
+                  "        console.log('while a colleague\\'s would fire it.');",
                   "    } else {",
                   "        console.log('None - changes by any resource should fire the webhook.');",
                   "    }",
-                  "} else {",
-                  "    console.log('HTTP ' + pm.response.code + ' - this Autotask version may not expose');",
-                  "    console.log('ExcludedResources. Not conclusive either way.');",
                   "}"
                 ]
               }
@@ -716,9 +736,9 @@
               }
             ],
             "url": {
-              "raw": "{{baseUrl}}/V1.0/Resources/{{ownerResourceId}}"
+              "raw": "{{baseUrl}}/V1.0/Resources/query?search={\"filter\":[{\"op\":\"eq\",\"field\":\"id\",\"value\":{{ownerResourceId}}}]}"
             },
-            "description": "Looks up the resource that owns the webhook (its ownerResourceID).\n\nA webhook owned by an inactive, locked or deactivated resource can stop dispatching while still reporting isActive: true - the config looks perfect and nothing is ever sent.\n\nSet ownerResourceId from the webhook's ownerResourceID first.\n\nRead-only."
+            "description": "Looks up the resource that owns the webhook, by its ownerResourceID.\n\nSet ownerResourceId from the webhook record first - Utilities > List webhooks shows it.\n\nRead-only."
           },
           "event": [
             {
@@ -726,30 +746,37 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code !== 200) {",
-                  "    console.log('HTTP ' + pm.response.code + ' - could not read the resource.');",
+                  "const parent = pm.collectionVariables.get('ownerResourceId');",
+                  "if (!parent) {",
+                  "    console.log('ownerResourceId is EMPTY - that is why this 404s. The URL ends up with a blank id.');",
+                  "    console.log('Re-importing the collection clears it, because it is captured, not typed.');",
+                  "    console.log('Fix: run Utilities > List webhooks, then put the id in ownerResourceId and Save.');",
+                  "}",
+                  "",
+                  "const items = (pm.response.json().items) || [];",
+                  "if (!items.length) {",
+                  "    console.log('No resource ' + parent + ' found.');",
                   "} else {",
-                  "    const j = pm.response.json();",
-                  "    const r = j.item || (j.items && j.items[0]) || j;",
+                  "    const r = items[0];",
                   "    console.log('--- webhook owner, resource ' + r.id + ' ---');",
-                  "    console.log('userName  : ' + r.userName);",
-                  "    console.log('email     : ' + r.email);",
-                  "    console.log('isActive  : ' + r.isActive);",
+                  "    console.log('userName   : ' + r.userName);",
+                  "    console.log('email      : ' + r.email);",
+                  "    console.log('isActive   : ' + r.isActive);",
                   "    console.log('licenseType: ' + r.licenseType);",
                   "    console.log('');",
                   "    if (r.isActive === false) {",
                   "        console.log('THIS RESOURCE IS INACTIVE.');",
-                  "        console.log('A webhook owned by an inactive resource can stop dispatching while still');",
-                  "        console.log('reporting isActive: true on the webhook itself. Strong candidate.');",
+                  "        console.log('A webhook owned by an inactive resource can stop dispatching while');",
+                  "        console.log('still reporting isActive: true on the webhook itself.');",
                   "    } else {",
                   "        console.log('Owner is active - this is not the cause.');",
                   "    }",
                   "}",
                   "",
                   "pm.test('Owner resource is active', function () {",
-                  "    const j = pm.response.json();",
-                  "    const r = j.item || (j.items && j.items[0]) || j;",
-                  "    pm.expect(r.isActive, 'the webhook owner is inactive').to.not.equal(false);",
+                  "    const items = (pm.response.json().items) || [];",
+                  "    pm.expect(items.length, 'owner resource not found').to.be.above(0);",
+                  "    pm.expect(items[0].isActive, 'the webhook owner is inactive').to.not.equal(false);",
                   "});"
                 ]
               }
